@@ -1,6 +1,12 @@
-// keyboardTD — terminal frontend: blits the game's Screen grid via ncurses.
+// keyboardTD — terminal frontend: blits the game's Screen grid via curses.
+// On macOS/Linux that's ncurses; on Windows it's PDCursesMod (same API, no
+// terminfo dependency, so the .exe runs standalone in any console).
 
+#ifdef _WIN32
+#include <curses.h>
+#else
 #include <ncurses.h>
+#endif
 
 #include <chrono>
 #include <cstdio>
@@ -34,7 +40,11 @@ using namespace ktd;
 int main() {
     // Esc is a gameplay key (drop target); don't sit on it waiting for an
     // escape sequence. Must be set before initscr().
+#ifdef _WIN32
+    _putenv_s("ESCDELAY", "25");
+#else
     setenv("ESCDELAY", "25", 0);
+#endif
     initscr();
     cbreak();
     noecho();

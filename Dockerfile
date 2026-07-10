@@ -5,7 +5,10 @@
 #   docker run --rm -p 8080:80 keyboardtd
 #   open http://localhost:8080
 
-FROM emscripten/emsdk:3.1.64 AS build
+# emsdk only publishes amd64 images; the wasm it produces is platform-
+# independent, so pinning the build stage is safe (and required for
+# multi-arch image builds).
+FROM --platform=linux/amd64 emscripten/emsdk:3.1.64 AS build
 WORKDIR /src
 COPY Makefile ./
 COPY src ./src

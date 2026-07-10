@@ -26,6 +26,7 @@
 
 #include "game.h"
 
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -726,7 +727,8 @@ void drawWall(const Game &g, Screen &s) {
     Color c = g.wallHp > kWallMaxHp * 2 / 3 ? C_GREEN
               : g.wallHp > kWallMaxHp / 3   ? C_YELLOW
                                             : C_RED;
-    for (double a = 0; a < 2 * M_PI; a += 0.035) {
+    constexpr double kTau = 6.283185307179586;  // M_PI isn't standard C++
+    for (double a = 0; a < kTau; a += 0.035) {
         int x = static_cast<int>(std::lround(cx + r * std::cos(a)));
         int y = static_cast<int>(std::lround(cy + r * std::sin(a) / kAspect));
         if (y >= 1 && y < rows - 1) s.put(y, x, '#', c);

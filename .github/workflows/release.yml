@@ -1,0 +1,73 @@
+# On every version tag (v1.2.3), build the terminal game for Linux x64,
+# macOS arm64, and Windows x64, and attach the binaries to a GitHub Release.
+
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  linux-x64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libncurses-dev
+      - run: make
+      - run: mv keyboardtd keyboardtd-linux-x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: keyboardtd-linux-x64
+          path: keyboardtd-linux-x64
+
+  macos-arm64:
+    runs-on: macos-latest  # Apple Silicon; ncurses ships with the SDK
+    steps:
+      - uses: actions/checkout@v4
+      - run: make
+      - run: mv keyboardtd keyboardtd-macos-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: keyboardtd-macos-arm64
+          path: keyboardtd-macos-arm64
+
+  windows-x64:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: make git mingw-w64-x86_64-gcc
+      # Windows has no ncurses/terminfo; PDCursesMod implements the same
+      # curses API against the Windows console, so the exe is standalone.
+      - run: git clone --depth 1 https://github.com/Bill-Gray/PDCursesMod.git
+      - run: make -C PDCursesMod/wincon
+      - run: >
+          g++ -std=c++17 -O2 -Wall -IPDCursesMod
+          src/game.cpp src/platform_ncurses.cpp
+          PDCursesMod/wincon/pdcurses.a
+          -static -o keyboardtd-windows-x64.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: keyboardtd-windows-x64
+          path: keyboardtd-windows-x64.exe
+
+  release:
+    needs: [linux-x64, macos-arm64, windows-x64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: keyboardtd-*
+          generate_release_notes: true

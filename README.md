@@ -30,6 +30,20 @@ If you have the Emscripten SDK installed locally, `make web` builds the
 static site into `dist/web/` instead; serve it with any static host
 (GitHub Pages works — it's just three files).
 
+### Releases & CI
+
+Pushing a version tag (e.g. `git tag v1.0.0 && git push --tags`) triggers
+two GitHub Actions workflows:
+
+- **docker** — builds the web image and pushes it to GitHub Container
+  Registry as `ghcr.io/<owner>/<repo>:v1.0.0` **and** `:latest`
+  (amd64 + arm64). Run anywhere with
+  `docker run -p 8080:80 ghcr.io/<owner>/<repo>:latest`.
+- **release** — builds the terminal game for **Linux x64**, **macOS
+  arm64**, and **Windows x64** and attaches the binaries to a GitHub
+  Release. The Windows build uses PDCursesMod instead of ncurses, so the
+  `.exe` runs standalone in any Windows console.
+
 ### Code layout
 
 ```
