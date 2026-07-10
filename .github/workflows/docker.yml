@@ -6,7 +6,9 @@ name: docker
 
 on:
   push:
-    tags: ['v*']
+    tags:
+      - 'v*'
+      - '[0-9]+.[0-9]+*'  # bare tags like 0.1.0 work too
 
 permissions:
   contents: read
