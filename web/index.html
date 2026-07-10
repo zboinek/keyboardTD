@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>keyboardTD</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+<style>
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body { background: #101014; }
+  /* The terminal fills the whole window; the grid grows with it (more
+     cells at the same font size), it is not scaled up. */
+  #term { position: absolute; inset: 0; }
+</style>
+</head>
+<body>
+<div id="term"></div>
+<script>
+  const term = new Terminal({
+    fontSize: 16,
+    cursorBlink: false,
+    scrollback: 0,
+    theme: { background: '#101014' },
+  });
+  const fitAddon = new FitAddon.FitAddon();
+  term.loadAddon(fitAddon);
+  term.open(document.getElementById('term'));
+  fitAddon.fit();
+  term.focus();
+  document.body.addEventListener('click', () => term.focus());
+
+  let wasmReady = false;
+  function syncSize() {
+    fitAddon.fit();
+    if (wasmReady)
+      Module.ccall('web_resize', null, ['number', 'number'],
+                   [term.rows, term.cols]);
+  }
+  window.addEventListener('resize', syncSize);
+
+  var Module = {
+    term: term,
+    onRuntimeInitialized: () => {
+      wasmReady = true;
+      syncSize();
+      term.onData((d) => {
+        // Single chars only: letters, Space, Enter (\r), Backspace (\x7f)
+        // and a lone Esc (\x1b). Multi-char escape sequences (arrow keys
+        // etc.) are dropped so a stray \x1b can't drop the player's target.
+        if (d.length !== 1) return;
+        Module.ccall('web_key', null, ['number'], [d.charCodeAt(0)]);
+      });
+    },
+  };
+</script>
+<script src="keyboardtd.js"></script>
+</body>
+</html>

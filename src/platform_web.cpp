@@ -1,0 +1,113 @@
+// keyboardTD — browser frontend: the game compiles to WebAssembly and each
+// frame is rendered as one ANSI string written into an xterm.js terminal
+// (see web/index.html). Input arrives via web_key(), called from JS.
+
+#include <emscripten.h>
+
+#include <string>
+
+#include "game.h"
+
+namespace {
+// Grid size follows the browser window (see web_resize below); these are
+// just the defaults until the page reports its real dimensions.
+int sRows = 28;
+int sCols = 100;
+}  // namespace
+
+// clang-format off
+EM_JS(void, js_term_write, (const char *p), {
+    Module.term.write(UTF8ToString(p));
+});
+EM_JS(int, js_load_highscore, (), {
+    try { return parseInt(localStorage.getItem('ktd_highscore') || '0', 10) | 0; }
+    catch (e) { return 0; }
+});
+EM_JS(void, js_save_highscore, (int v), {
+    try { localStorage.setItem('ktd_highscore', String(v)); } catch (e) {}
+});
+// clang-format on
+
+namespace ktd {
+
+long platformLoadHighScore() { return js_load_highscore(); }
+void platformSaveHighScore(long hs) {
+    js_save_highscore(static_cast<int>(hs));
+}
+bool platformCanQuit() { return false; }  // it's a browser tab — just close it
+
+}  // namespace ktd
+
+using namespace ktd;
+
+static Screen sScreen;
+static std::string sFrame;
+static double sLastMs = 0;
+
+extern "C" EMSCRIPTEN_KEEPALIVE void web_key(int ch) { gameKey(ch); }
+
+// Called from JS whenever xterm.js is re-fit to the window: the play field
+// grows with the screen instead of scaling — more cells, more reaction time.
+extern "C" EMSCRIPTEN_KEEPALIVE void web_resize(int rows, int cols) {
+    if (rows >= 12 && cols >= 40) {
+        sRows = rows;
+        sCols = cols;
+    }
+}
+
+static const char *sgrFor(const Cell &c) {
+    switch (c.color) {
+        case C_CYAN: return "36";
+        case C_WHITE: return "37";
+        case C_GREEN: return "32";
+        case C_YELLOW: return "33";
+        case C_RED: return "31";
+        case C_MAGENTA: return "35";
+        case C_HUD: return "30;46";
+        default: return "39;49";
+    }
+}
+
+// Full-frame redraw: home the cursor and repaint every cell, emitting an SGR
+// escape only when the attributes change. No clear-screen, so no flicker.
+static void buildFrame(const Screen &s, std::string &out) {
+    out.clear();
+    out += "\x1b[H";
+    const Cell *prev = nullptr;
+    for (int y = 0; y < s.rows(); ++y) {
+        if (y > 0) out += "\r\n";
+        for (int x = 0; x < s.cols(); ++x) {
+            const Cell &c = s.at(y, x);
+            if (!prev || prev->color != c.color || prev->bold != c.bold ||
+                prev->dim != c.dim) {
+                out += "\x1b[0;";
+                out += sgrFor(c);
+                if (c.bold) out += ";1";
+                if (c.dim) out += ";2";
+                out += 'm';
+            }
+            out += c.ch;
+            prev = &c;
+        }
+    }
+    out += "\x1b[0m";
+}
+
+static void tick() {
+    double nowMs = emscripten_get_now();
+    double dt = (nowMs - sLastMs) / 1000.0;
+    sLastMs = nowMs;
+
+    sScreen.resize(sRows, sCols);
+    gameFrame(dt, sScreen);  // quit isn't offered on the web build
+    buildFrame(sScreen, sFrame);
+    js_term_write(sFrame.c_str());
+}
+
+int main() {
+    gameInit();
+    sLastMs = emscripten_get_now();
+    js_term_write("\x1b[?25l");  // hide the cursor
+    emscripten_set_main_loop(tick, 60, 1);
+    return 0;
+}

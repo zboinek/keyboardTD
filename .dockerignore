@@ -1,0 +1,7 @@
+keyboardtd
+dist/
+highscore.txt
+.claude/
+README.md
+Dockerfile
+.dockerignore
