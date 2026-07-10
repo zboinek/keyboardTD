@@ -52,11 +52,12 @@ jobs:
       # curses API against the Windows console, so the exe is standalone.
       - run: git clone --depth 1 https://github.com/Bill-Gray/PDCursesMod.git
       - run: make -C PDCursesMod/wincon
+      # -lwinmm: PDCursesMod's beep() uses the PlaySound API from winmm.
       - run: >
           g++ -std=c++17 -O2 -Wall -IPDCursesMod
           src/game.cpp src/platform_ncurses.cpp
           PDCursesMod/wincon/pdcurses.a
-          -static -o keyboardtd-windows-x64.exe
+          -lwinmm -static -o keyboardtd-windows-x64.exe
       - uses: actions/upload-artifact@v4
         with:
           name: keyboardtd-windows-x64
