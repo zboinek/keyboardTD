@@ -221,7 +221,9 @@ double frand() { return std::uniform_real_distribution<>(0.0, 1.0)(rng); }
 int level(const Game &g) { return 1 + static_cast<int>(g.elapsed / 20.0); }
 
 double spawnInterval(const Game &g) {
-    return std::max(0.65, 2.8 * std::pow(0.92, level(g) - 1));
+    // Gentle decay: the throughput the game demands (word length / interval)
+    // should roughly double over ~10 minutes, not triple in 4.
+    return std::max(0.65, 2.8 * std::pow(0.95, level(g) - 1));
 }
 
 double enemySpeed(const Game &g) {
@@ -263,8 +265,8 @@ double turretInterval(int lvl) { return 2.6 - 0.25 * (lvl - 1); }
 const std::string &pickWord(const Game &g) {
     // Higher levels mix in more medium/long words.
     double roll = frand();
-    double longShare = std::min(0.35, 0.04 * level(g));
-    double medShare = std::min(0.55, 0.25 + 0.05 * level(g));
+    double longShare = std::min(0.35, 0.02 * level(g));
+    double medShare = std::min(0.55, 0.25 + 0.025 * level(g));
     const auto &pool = roll < longShare              ? kLongWords
                        : roll < longShare + medShare ? kMediumWords
                                                      : kShortWords;
