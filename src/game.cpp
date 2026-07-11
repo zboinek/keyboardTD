@@ -30,6 +30,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <random>
@@ -242,6 +243,11 @@ struct Game {
     bool over = false;
     bool shake = false;  // one-frame flash on a typo
     bool cheat = false;  // started with bonus points; never touches the high score
+
+    // Hall-of-fame nick entry on the game-over screen (web build only).
+    std::string nick;
+    bool nickPrompt = false;  // typing a nick right now
+    bool nickSent = false;    // already submitted this run
 };
 
 Game G;
@@ -250,6 +256,19 @@ long sCheatStartScore = 0;  // >0 when launched with a cheat starting score
 bool sQuit = false;
 bool sWelcome = true;          // showing the welcome screen (process start only)
 std::string sWelcomeBuf;       // letters typed toward a welcome menu word
+
+// Online hall of fame, best first — filled asynchronously by the platform
+// via gameSetScores; empty on the terminal build.
+std::vector<std::pair<std::string, long>> sBoard;
+
+// The run's score must beat the board's tail (or the board must have room)
+// before we bother the player for a nick. The server enforces the same
+// checks again, plus ones we can't do here.
+bool qualifiesForBoard(const Game &g) {
+    if (!platformHasLeaderboard() || g.cheat) return false;
+    if (g.elapsed < 60 || g.totalScore <= 0) return false;  // server minimum
+    return sBoard.size() < 10 || g.totalScore > sBoard.back().second;
+}
 
 // Applies the process-wide cheat starting score (if any) to a fresh game;
 // shared by gameInit and the play-again path so the cheat persists across
@@ -1141,6 +1160,19 @@ void drawWelcome(long highScore, Screen &s) {
     const char *hint = "type a word (or press Enter to start)";
     s.print(cy + 7, cx - static_cast<int>(strlen(hint)) / 2, hint, C_WHITE,
             false, true);
+
+    // Online hall of fame in a right-hand column when there's room for it
+    // next to the centered tips (the web build's grid is ~100 cols).
+    if (!sBoard.empty() && s.cols() >= 96) {
+        int bx = cx + 32;
+        s.print(cy - 5, bx, "HALL OF FAME", C_MAGENTA, true);
+        for (size_t i = 0; i < sBoard.size(); ++i) {
+            snprintf(buf, sizeof buf, "%2zu. %-10s %ld", i + 1,
+                     sBoard[i].first.c_str(), sBoard[i].second);
+            s.print(cy - 4 + static_cast<int>(i), bx, buf,
+                    i == 0 ? C_YELLOW : C_WHITE, i == 0);
+        }
+    }
 }
 
 // Live WPM over the last kWpmWindow seconds (5 chars = 1 word).
@@ -1385,6 +1417,19 @@ void drawGameOver(const Game &g, long highScore, Screen &s) {
         snprintf(buf, sizeof buf, "best: %ld", highScore);
         s.print(cy + 3, cx - 9, buf);
     }
+    if (g.nickPrompt && !g.nickSent) {
+        // While the nick prompt is up, it replaces the restart hint so
+        // Enter can't mean two things at once.
+        snprintf(buf, sizeof buf, "HALL OF FAME! nick: %s_", g.nick.c_str());
+        s.print(cy + 5, cx - static_cast<int>(strlen(buf)) / 2, buf, C_YELLOW,
+                true);
+        const char *how = "(3-10 letters/digits; Enter sends, Esc skips)";
+        s.print(cy + 6, cx - static_cast<int>(strlen(how)) / 2, how, C_WHITE,
+                false, true);
+        return;
+    }
+    if (g.nickSent)
+        s.print(cy + 4, cx - 8, "score submitted!", C_GREEN, true);
     s.print(cy + 5, cx - 15,
             platformCanQuit() ? "Enter: play again    Q: quit"
                               : "Enter: play again",
@@ -1413,7 +1458,25 @@ void gameInit(long startingScore) {
     sQuit = false;
     sWelcome = true;
     sWelcomeBuf.clear();
+    if (platformHasLeaderboard()) platformFetchScores();
     resetGame(G);
+}
+
+// Async hall-of-fame data from the platform: "nick score" per line, best
+// first. Replaces the cached board wholesale.
+void gameSetScores(const std::string &data) {
+    sBoard.clear();
+    size_t pos = 0;
+    while (pos < data.size() && sBoard.size() < 10) {
+        size_t nl = data.find('\n', pos);
+        if (nl == std::string::npos) nl = data.size();
+        std::string line = data.substr(pos, nl - pos);
+        pos = nl + 1;
+        size_t sp = line.find(' ');
+        if (sp == std::string::npos || sp == 0) continue;
+        long sc = std::strtol(line.c_str() + sp + 1, nullptr, 10);
+        if (sc > 0) sBoard.push_back({line.substr(0, sp), sc});
+    }
 }
 
 void gameKey(int ch) {
@@ -1448,6 +1511,23 @@ void gameKey(int ch) {
         return;
     }
     if (g.over) {
+        if (g.nickPrompt && !g.nickSent) {
+            // Typing a hall-of-fame nick; Enter submits, Esc skips. The
+            // usual restart/quit keys wait until the prompt is resolved.
+            if ((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')) {
+                if (g.nick.size() < 10) g.nick += static_cast<char>(ch);
+            } else if (ch == 127 || ch == 8) {
+                if (!g.nick.empty()) g.nick.pop_back();
+            } else if ((ch == '\n' || ch == '\r') && g.nick.size() >= 3) {
+                platformSubmitScore(g.nick, g.totalScore, overallWpm(g),
+                                    level(g), static_cast<int>(g.elapsed));
+                g.nickSent = true;
+                g.nickPrompt = false;
+            } else if (ch == 27) {
+                g.nickPrompt = false;
+            }
+            return;
+        }
         if (ch == '\n' || ch == '\r') {
             if (!g.cheat && g.totalScore > sHighScore) sHighScore = g.totalScore;
             resetGame(g);
@@ -1492,6 +1572,7 @@ bool gameFrame(double dt, Screen &s) {
             g.cmdBuf.clear();
             if (!g.cheat && g.totalScore > sHighScore)
                 platformSaveHighScore(g.totalScore);
+            g.nickPrompt = qualifiesForBoard(g);
         }
     }
 

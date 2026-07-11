@@ -16,5 +16,13 @@ COPY web ./web
 RUN make web
 
 FROM nginx:alpine
+RUN apk add --no-cache python3
 COPY --from=build /src/dist/web /usr/share/nginx/html
+COPY server/leaderboard.py /app/leaderboard.py
+COPY server/nginx.conf /etc/nginx/conf.d/default.conf
+COPY server/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+# Hall-of-fame SQLite lives here; mount a volume to survive redeploys.
+VOLUME /data
 EXPOSE 80
+ENTRYPOINT ["/entrypoint.sh"]

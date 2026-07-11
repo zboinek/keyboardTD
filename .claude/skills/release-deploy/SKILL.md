@@ -45,6 +45,18 @@ The game is the `keyboardtd` service in `~/apps/docker-compose.yml`, served
 at https://td.zboina.pl behind an nginx-proxy + letsencrypt companion
 (don't touch those containers).
 
+Since 0.3.x the image also runs the hall-of-fame API (nginx `/api/` -> a
+Python sidecar; SQLite at `/data/scores.db`). The compose service MUST
+mount a volume for `/data` or scores are lost on every redeploy:
+
+```yaml
+    volumes:
+      - ./keyboardtd-data:/data
+```
+
+Check it's there before reloading; add it once if missing. The API's rate
+limiting reads `X-Real-IP`, which the outer nginx-proxy sets by default.
+
 ```sh
 ssh app-server-2 'cd ~/apps && docker compose pull keyboardtd && docker compose up -d keyboardtd'
 ```

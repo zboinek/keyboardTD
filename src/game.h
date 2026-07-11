@@ -67,6 +67,15 @@ long platformLoadHighScore();
 void platformSaveHighScore(long hs);
 bool platformCanQuit();
 
+// Online hall of fame (web build only; the terminal build stubs these out).
+// Fetch and submit are fire-and-forget async: results arrive later via
+// gameSetScores, one "nick score" pair per line, best first.
+bool platformHasLeaderboard();
+void platformFetchScores();
+void platformSubmitScore(const std::string &nick, long score, int wpm,
+                         int level, int duration);
+void gameSetScores(const std::string &data);
+
 // startingScore > 0 is cheat mode (e.g. for screenshots): the run begins
 // with that many points and never touches the high score.
 void gameInit(long startingScore = 0);

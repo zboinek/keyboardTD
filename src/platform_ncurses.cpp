@@ -34,6 +34,11 @@ void platformSaveHighScore(long hs) {
 
 bool platformCanQuit() { return true; }
 
+// No online hall of fame from the terminal build.
+bool platformHasLeaderboard() { return false; }
+void platformFetchScores() {}
+void platformSubmitScore(const std::string &, long, int, int, int) {}
+
 }  // namespace ktd
 
 using namespace ktd;

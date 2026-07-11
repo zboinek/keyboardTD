@@ -19,7 +19,7 @@ web: $(SRC) src/platform_web.cpp $(HDR) web/index.html
 	mkdir -p dist/web
 	$(EMCC) -std=c++17 -O2 $(SRC) src/platform_web.cpp \
 	  -sEXPORTED_RUNTIME_METHODS=ccall \
-	  -sEXPORTED_FUNCTIONS=_main,_web_key,_web_resize \
+	  -sEXPORTED_FUNCTIONS=_main,_web_key,_web_resize,_web_scores \
 	  -o dist/web/keyboardtd.js
 	cp web/index.html dist/web/index.html
 

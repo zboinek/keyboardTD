@@ -26,7 +26,39 @@ EM_JS(int, js_load_highscore, (), {
 EM_JS(void, js_save_highscore, (int v), {
     try { localStorage.setItem('ktd_highscore', String(v)); } catch (e) {}
 });
+// The hall-of-fame API lives on the same origin (nginx proxies /api/ to a
+// sidecar process), so plain fetch works with no CORS setup. Both calls
+// are fire-and-forget; whenever a fresh top-10 arrives it's pushed back
+// into the game as "nick score" lines via the exported web_scores().
+EM_JS(void, js_fetch_scores, (), {
+    fetch('/api/top10').then((r) => r.json()).then((list) => {
+        let s = '';
+        for (const e of list) s += e.nick + ' ' + e.score + '\n';
+        Module.ccall('web_scores', null, ['string'], [s]);
+    }).catch((e) => {});
+});
+EM_JS(void, js_submit_score,
+      (const char *nick, int score, int wpm, int level, int duration), {
+    fetch('/api/score', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            nick: UTF8ToString(nick), score: score, wpm: wpm,
+            level: level, duration: duration
+        })
+    }).then((r) => r.json()).then((d) => {
+        if (d && d.top10) {
+            let s = '';
+            for (const e of d.top10) s += e.nick + ' ' + e.score + '\n';
+            Module.ccall('web_scores', null, ['string'], [s]);
+        }
+    }).catch((e) => {});
+});
 // clang-format on
+
+extern "C" EMSCRIPTEN_KEEPALIVE void web_scores(const char *data) {
+    ktd::gameSetScores(data);
+}
 
 namespace ktd {
 
@@ -35,6 +67,14 @@ void platformSaveHighScore(long hs) {
     js_save_highscore(static_cast<int>(hs));
 }
 bool platformCanQuit() { return false; }  // it's a browser tab — just close it
+
+bool platformHasLeaderboard() { return true; }
+void platformFetchScores() { js_fetch_scores(); }
+void platformSubmitScore(const std::string &nick, long score, int wpm,
+                         int level, int duration) {
+    js_submit_score(nick.c_str(), static_cast<int>(score), wpm, level,
+                    duration);
+}
 
 }  // namespace ktd
 
