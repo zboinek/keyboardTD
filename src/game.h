@@ -67,7 +67,9 @@ long platformLoadHighScore();
 void platformSaveHighScore(long hs);
 bool platformCanQuit();
 
-void gameInit();
+// startingScore > 0 is cheat mode (e.g. for screenshots): the run begins
+// with that many points and never touches the high score.
+void gameInit(long startingScore = 0);
 
 // Feed one raw key: 'a'..'z', ' ', 27 = Esc, 8/127 = Backspace, 10/13 = Enter.
 void gameKey(int ch);

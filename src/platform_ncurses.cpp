@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 
 #include "game.h"
@@ -37,7 +38,14 @@ bool platformCanQuit() { return true; }
 
 using namespace ktd;
 
-int main() {
+int main(int argc, char **argv) {
+    // --cheat: start with a 100k point cushion for taking screenshots. Runs
+    // started this way never touch the high score file.
+    long startingScore = 0;
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--cheat") == 0) startingScore = 100000;
+    }
+
     // Esc is a gameplay key (drop target); don't sit on it waiting for an
     // escape sequence. Must be set before initscr().
 #ifdef _WIN32
@@ -65,7 +73,7 @@ int main() {
         init_pair(C_HUD, COLOR_BLACK, COLOR_CYAN);
     }
 
-    gameInit();
+    gameInit(startingScore);
     Screen s;
     auto last = std::chrono::steady_clock::now();
     bool running = true;

@@ -47,6 +47,7 @@ constexpr int kBossDamage = 3;
 constexpr double kFreezeDuration = 5.0;
 constexpr int kHealAmount = 3;
 constexpr double kWpmWindow = 15.0;  // seconds of typing history for live WPM
+constexpr int kRecentWordsCap = 20;  // words to avoid repeating right away
 
 constexpr long kWallCost = 10000;
 constexpr long kWallRepairCost = 2500;
@@ -60,21 +61,52 @@ constexpr double kBulletSpeed = 45.0;  // physical units per second
 const char *kDirNames[4] = {"north", "south", "east", "west"};
 
 const std::vector<std::string> kShortWords = {
-    "ace", "bay", "cat", "dew", "elf", "fog", "gem", "hex", "ivy", "jab",
-    "key", "lap", "mud", "nap", "oak", "paw", "rug", "sky", "tar", "urn",
-    "vow", "wax", "yak", "zip", "bolt", "cave", "dusk", "echo", "fern",
-    "gale", "husk", "iron", "jolt", "kelp", "lava", "mist", "nova", "opal",
-    "peak", "quip", "rune", "sage", "tide", "veil", "wisp", "yarn", "zeal",
+    "ace",  "bay",  "cat",  "dew",  "elf",  "fog",  "gem",  "hex",  "ivy",
+    "jab",  "key",  "lap",  "mud",  "nap",  "oak",  "paw",  "rug",  "sky",
+    "tar",  "urn",  "vow",  "wax",  "yak",  "zip",  "elm",  "fox",  "owl",
+    "ram",  "ash",  "bat",  "cub",  "den",  "fin",  "hop",  "imp",  "jig",
+    "keg",  "log",  "net",  "orb",  "pod",  "rat",  "sod",  "tug",  "vex",
+    "web",  "yew",  "ebb",  "ale",  "bud",  "cog",  "dot",  "ewe",  "fig",
+    "gum",  "hay",  "ink",  "jaw",  "kit",  "lug",  "mug",  "nag",  "oat",
+    "pit",  "rye",  "sap",  "tan",  "van",  "wig",  "yam",
+    "bolt", "cave", "dusk", "echo", "fern", "gale", "husk", "iron", "jolt",
+    "kelp", "lava", "mist", "nova", "opal", "peak", "quip", "rune", "sage",
+    "tide", "veil", "wisp", "yarn", "zeal", "jade", "onyx", "ruby", "coal",
+    "gold", "sand", "silt", "clay", "wind", "rain", "snow", "dune", "reef",
+    "moss", "glow", "palm", "leaf", "root", "seed", "vine", "herb", "drip",
+    "gust", "mire", "peat", "cove", "isle", "reed", "weed", "moth", "wasp",
+    "newt", "crow", "wolf", "bear", "lynx", "hawk", "wren", "dove", "swan",
+    "mole", "toad", "frog", "worm", "slug",
 };
 
 const std::vector<std::string> kMediumWords = {
-    "anchor", "breeze", "cinder", "dagger", "ember",  "falcon", "goblin",
-    "hollow", "jungle", "kernel", "lantern", "marble", "nectar", "orchid",
-    "python", "quiver", "raider", "shadow", "temple", "umber",  "vortex",
-    "walnut", "zephyr", "bastion", "citadel", "drought", "eclipse",
-    "fortune", "granite", "harvest", "javelin", "kingdom", "lantern",
-    "monsoon", "nomadic", "obsidian", "phantom", "rampart", "serpent",
-    "thunder", "vulture", "warden", "wyvern",
+    "anchor",  "breeze",  "cinder",  "dagger",  "ember",   "falcon",
+    "goblin",  "hollow",  "jungle",  "kernel",  "lantern", "marble",
+    "nectar",  "orchid",  "python",  "quiver",  "raider",  "shadow",
+    "temple",  "umber",   "vortex",  "walnut",  "zephyr",  "bastion",
+    "citadel", "drought", "eclipse", "fortune", "granite", "harvest",
+    "javelin", "kingdom", "monsoon", "nomadic", "obsidian", "phantom",
+    "rampart", "serpent", "thunder", "vulture", "warden",  "wyvern",
+    "armor",   "banner",  "beacon",  "bishop",  "bounty",  "bramble",
+    "brigand", "canyon",  "castle",  "cavern",  "chalice", "charger",
+    "chisel",  "cipher",  "cleric",  "cobalt",  "compass", "condor",
+    "corsair", "cougar",  "crimson", "crystal", "dervish", "diamond",
+    "dragon",  "dungeon", "dwarven", "emerald", "ferrous", "forsake",
+    "fortify", "foundry", "galleon", "gambit",  "garrison", "glacier",
+    "goblet",  "gorgon",  "granary", "griffin", "grotto",  "hamlet",
+    "harbor",  "hazard",  "healer",  "hermit",  "hunter",  "imperil",
+    "inferno", "jackal",  "jaguar",  "keeper",  "ladder",  "legion",
+    "mallet",  "mammoth", "mantle",  "marrow",  "mentor",  "mirage",
+    "morsel",  "muster",  "mystic",  "needle",  "oracle",  "outlaw",
+    "palace",  "pauper",  "pillar",  "pirate",  "plague",  "plunder",
+    "poison",  "potion",  "quarry",  "quartz",  "ranger",  "ravine",
+    "reaper",  "rescue",  "ripple",  "ritual",  "rubble",  "saddle",
+    "savage",  "sentry",  "shield",  "silver",  "sliver",  "sludge",
+    "smithy",  "sorrow",  "specter", "sphinx",  "spider",  "statue",
+    "sultan",  "summit",  "tavern",  "thicket", "thrall",  "tremor",
+    "trinket", "tundra",  "tunnel",  "turret",  "tyrant",  "vandal",
+    "vellum",  "venture", "verdant", "vessel",  "violet",  "warlock",
+    "wither",  "wizard",  "wraith",  "zealot",
 };
 
 const std::vector<std::string> kLongWords = {
@@ -84,6 +116,14 @@ const std::vector<std::string> kLongWords = {
     "revenant", "stronghold", "trebuchet", "underworld", "vanquisher",
     "wilderness", "executioner", "fortification", "impenetrable",
     "thunderclap", "annihilator",
+    "alchemist", "apocalypse", "barricade", "battlefield", "catastrophe",
+    "centurion", "conjuration", "crossroads", "demolition", "desolation",
+    "devastator", "enchanted", "enchanter", "excavation", "expedition",
+    "gatekeeper", "graveyard", "guillotine", "gunpowder", "harbinger",
+    "leviathan", "merciless", "mountainside", "nightmare", "obliterate",
+    "plunderer", "reckoning", "sacrifice", "scavenger", "shipwreck",
+    "skirmisher", "stormbringer", "subjugate", "swordsman", "thunderous",
+    "tormentor", "tributary", "vengeance", "warhammer", "whirlwind",
 };
 
 enum class Kind { Normal, Boss, Freeze, Nuke, Heal };
@@ -131,6 +171,7 @@ struct Game {
     int kills = 0;
     long lettersTyped = 0;          // correct letters, whole run
     std::deque<double> typeTimes;   // timestamps of recent correct letters
+    std::deque<std::string> recentWords;  // avoids picking the same word again too soon
     double elapsed = 0;
     double spawnTimer = 0;
     double bossTimer = 40;   // first boss at 40s
@@ -153,11 +194,25 @@ struct Game {
 
     bool over = false;
     bool shake = false;  // one-frame flash on a typo
+    bool cheat = false;  // started with bonus points; never touches the high score
 };
 
 Game G;
 long sHighScore = 0;
+long sCheatStartScore = 0;  // >0 when launched with a cheat starting score
 bool sQuit = false;
+
+// Applies the process-wide cheat starting score (if any) to a fresh game;
+// shared by gameInit and the play-again path so the cheat persists across
+// restarts within the same run.
+void resetGame(Game &g) {
+    g = Game{};
+    if (sCheatStartScore > 0) {
+        g.score = sCheatStartScore;
+        g.peakScore = sCheatStartScore;
+        g.cheat = true;
+    }
+}
 
 std::mt19937 rng(std::random_device{}());
 
@@ -224,6 +279,18 @@ bool firstLetterTaken(const Game &g, char c) {
     return false;
 }
 
+bool recentlyUsed(const Game &g, const std::string &w) {
+    return std::find(g.recentWords.begin(), g.recentWords.end(), w) !=
+           g.recentWords.end();
+}
+
+// Remembers a spawned word so pickWord avoids it again until it ages out.
+void markUsed(Game &g, const std::string &w) {
+    g.recentWords.push_back(w);
+    if (static_cast<int>(g.recentWords.size()) > kRecentWordsCap)
+        g.recentWords.pop_front();
+}
+
 // Random point on the screen border.
 void borderPoint(int rows, int cols, double &x, double &y) {
     int side = std::uniform_int_distribution<>(0, 3)(rng);
@@ -239,8 +306,11 @@ void spawnEnemy(Game &g, int rows, int cols) {
     std::string word;
     for (int tries = 0; tries < 24; ++tries) {
         word = pickWord(g);
-        if (!firstLetterTaken(g, word[0])) break;
+        if (!firstLetterTaken(g, word[0]) &&
+            (tries >= 12 || !recentlyUsed(g, word)))
+            break;
     }
+    markUsed(g, word);
     Enemy e;
     e.id = g.nextId++;
     borderPoint(rows, cols, e.x, e.y);
@@ -263,7 +333,9 @@ void spawnBoss(Game &g, int rows, int cols) {
             if (i == 0 && firstLetterTaken(g, w[0])) continue;
             if (std::find(e.words.begin(), e.words.end(), w) != e.words.end())
                 continue;
+            if (tries < 12 && recentlyUsed(g, w)) continue;
             e.words.push_back(w);
+            markUsed(g, w);
             break;
         }
     }
@@ -865,7 +937,7 @@ void drawHud(const Game &g, long highScore, Screen &s) {
 }
 
 void drawGameOver(const Game &g, long highScore, Screen &s) {
-    bool record = g.peakScore > highScore;
+    bool record = !g.cheat && g.peakScore > highScore;
     int cy = s.rows() / 2, cx = s.cols() / 2;
     char buf[96];
     // Blank a backdrop so the stats are readable over the battlefield.
@@ -913,10 +985,11 @@ void drawShakeBorder(Screen &s) {
 
 // ---- public API -------------------------------------------------------------
 
-void gameInit() {
+void gameInit(long startingScore) {
     sHighScore = platformLoadHighScore();
+    sCheatStartScore = startingScore;
     sQuit = false;
-    G = Game{};
+    resetGame(G);
 }
 
 void gameKey(int ch) {
@@ -936,8 +1009,8 @@ void gameKey(int ch) {
     }
     if (g.over) {
         if (ch == '\n' || ch == '\r') {
-            if (g.peakScore > sHighScore) sHighScore = g.peakScore;
-            g = Game{};
+            if (!g.cheat && g.peakScore > sHighScore) sHighScore = g.peakScore;
+            resetGame(g);
         } else if ((ch == 'q' || ch == 27) && platformCanQuit()) {
             sQuit = true;
         }
@@ -958,7 +1031,7 @@ bool gameFrame(double dt, Screen &s) {
 
     if (g.quitReq) sQuit = true;
     if (sQuit) {
-        if (g.peakScore > sHighScore) {
+        if (!g.cheat && g.peakScore > sHighScore) {
             platformSaveHighScore(g.peakScore);
             sHighScore = g.peakScore;
         }
@@ -971,7 +1044,8 @@ bool gameFrame(double dt, Screen &s) {
             g.cmdMode = false;  // don't let the menu eat the restart key
             g.cmdPath.clear();
             g.cmdBuf.clear();
-            if (g.peakScore > sHighScore) platformSaveHighScore(g.peakScore);
+            if (!g.cheat && g.peakScore > sHighScore)
+                platformSaveHighScore(g.peakScore);
         }
     }
 
@@ -993,8 +1067,9 @@ bool gameFrame(double dt, Screen &s) {
 
 std::string gameGoodbye() {
     char buf[96];
+    long best = G.cheat ? sHighScore : std::max(sHighScore, G.peakScore);
     snprintf(buf, sizeof buf, "final score: %ld (peak %ld)   best: %ld",
-             G.score, G.peakScore, std::max(sHighScore, G.peakScore));
+             G.score, G.peakScore, best);
     return buf;
 }
 
