@@ -840,7 +840,11 @@ void drawTurrets(const Game &g, Screen &s) {
     }
 }
 
-void drawEnemy(const Enemy &e, bool isTarget, bool frozen, Screen &s) {
+// turretTargeted: a turret bullet is currently in flight toward this enemy —
+// distinct from isTarget (the word the player is actually typing), so a
+// player can tell at a glance "a turret's got this one" and type elsewhere.
+void drawEnemy(const Enemy &e, bool isTarget, bool turretTargeted,
+                bool frozen, Screen &s) {
     int y = static_cast<int>(std::lround(e.y));
     int x = static_cast<int>(std::lround(e.x)) -
             static_cast<int>(e.word().size()) / 2;
@@ -853,9 +857,10 @@ void drawEnemy(const Enemy &e, bool isTarget, bool frozen, Screen &s) {
         else if (isTarget) c = C_YELLOW;
         else if (isPowerUp(e.kind)) c = C_MAGENTA;
         else if (e.kind == Kind::Boss) c = C_RED;
-        else if (frozen) c = C_CYAN;
+        else if (turretTargeted || frozen) c = C_CYAN;
         else c = C_WHITE;
-        bool bold = typed || isTarget || e.kind != Kind::Normal;
+        bool bold = typed || isTarget || turretTargeted ||
+                    e.kind != Kind::Normal;
         s.put(y, x + static_cast<int>(i), e.word()[i], c, bold);
     }
 
@@ -1073,9 +1078,15 @@ bool gameFrame(double dt, Screen &s) {
     drawWall(g, s);
     drawTower(s, g.towerHp);
     drawTurrets(g, s);
-    for (size_t i = 0; i < g.enemies.size(); ++i)
-        drawEnemy(g.enemies[i], static_cast<int>(i) == g.target,
+    std::vector<int> turretTargets;  // enemy ids with an in-flight bullet
+    turretTargets.reserve(g.bullets.size());
+    for (const auto &b : g.bullets) turretTargets.push_back(b.targetId);
+    for (size_t i = 0; i < g.enemies.size(); ++i) {
+        bool shot = std::find(turretTargets.begin(), turretTargets.end(),
+                               g.enemies[i].id) != turretTargets.end();
+        drawEnemy(g.enemies[i], static_cast<int>(i) == g.target, shot,
                   g.freezeTimer > 0, s);
+    }
     drawCenterStats(g, s);
     drawHud(g, sHighScore, s);
     if (g.over) drawGameOver(g, sHighScore, s);
