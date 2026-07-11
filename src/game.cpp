@@ -142,6 +142,7 @@ struct Enemy {
     std::vector<std::string> words;  // bosses carry several, others one
     int wordIdx = 0;
     int progress = 0;  // letters typed into the current word
+    bool forgiven = false;  // steady-hands upgrade already excused one typo
     double speed;      // physical units per second
 
     const std::string &word() const { return words[wordIdx]; }
@@ -158,6 +159,41 @@ struct Turret {
     bool built = false;
     int lvl = 1;
     double cooldown = 0;
+};
+
+// ---- level-up drafts ---------------------------------------------------------
+// Every 2nd level the game fully pauses and offers one of three upgrades,
+// picked with the number keys — numbers can't collide with enemy words, so
+// there's no misclick even mid-swarm.
+
+enum Upg {
+    U_FREEZE,   // freeze power-up lasts longer
+    U_NUKE,     // nuke strips more letters
+    U_QUAKE,    // earthquake crushes more enemies
+    U_HP,       // tower max HP up (and heals a little)
+    U_GUN,      // the center tower fires like a turret; more tiers = level up
+    U_COMBO,    // combo tier needs fewer kills
+    U_STEADY,   // first typo on each enemy doesn't break the combo
+    U_MASONRY,  // walls cost less
+    U_SCRAP,    // turret strips pay more per letter
+    U_RAPID,    // turrets fire faster
+    U_MAGNET,   // power-ups spawn more often
+    U_BOUNTY,   // bosses pay a bigger bounty
+    U_COUNT
+};
+
+struct UpgDef {
+    const char *name;
+    int maxTier;
+};
+
+const UpgDef kUpgDefs[U_COUNT] = {
+    {"longer freeze", 4},       {"bigger nuke", 2},
+    {"stronger earthquake", 4}, {"reinforced tower", 3},
+    {"tower gun", 4},           {"combo endurance", 2},
+    {"steady hands", 1},        {"masonry", 2},
+    {"scrap value", 2},         {"rapid turrets", 2},
+    {"power magnet", 2},        {"bounty hunter", 2},
 };
 
 struct Game {
@@ -183,7 +219,15 @@ struct Game {
 
     int wallHp = 0;  // 0 = no wall standing
     Turret turrets[4];  // N, S, E, W
+    Turret towerGun;    // center tower's own gun (U_GUN draft unlock)
     std::vector<Bullet> bullets;
+
+    int upg[U_COUNT] = {};      // draft upgrade tiers
+    int towerMaxHp = kTowerMaxHp;  // grows with U_HP
+    bool draftOpen = false;     // full pause; 1-3 picks an upgrade
+    int draftIds[3] = {-1, -1, -1};
+    int draftCount = 0;
+    int prevLevel = 1;  // level seen last frame, to detect level-ups
 
     bool cmdMode = false;
     bool quitReq = false;              // set by the `quit` menu entry
@@ -266,6 +310,144 @@ void turretPos(int dir, int rows, int cols, double &x, double &y) {
 }
 
 double turretInterval(int lvl) { return 2.6 - 0.25 * (lvl - 1); }
+
+// ---- draft upgrade effects ---------------------------------------------------
+// Every tunable an upgrade can touch goes through one of these, so the base
+// game and the drafted build never disagree.
+
+double freezeDuration(const Game &g) {
+    return kFreezeDuration + 1.5 * g.upg[U_FREEZE];
+}
+
+int nukeCut(const Game &g) { return 2 + g.upg[U_NUKE]; }
+
+// Tiers raise the floor as well as the ceiling — a bigger minimum is what
+// makes an RNG spell feel upgraded.
+void quakeRange(const Game &g, int &lo, int &hi) {
+    static const int kLo[5] = {1, 2, 3, 3, 4};
+    static const int kHi[5] = {5, 5, 6, 7, 8};
+    lo = kLo[g.upg[U_QUAKE]];
+    hi = kHi[g.upg[U_QUAKE]];
+}
+
+int comboEvery(const Game &g) { return 5 - g.upg[U_COMBO]; }  // 5, 4, 3
+
+long wallCost(const Game &g) {
+    return kWallCost * (4 - g.upg[U_MASONRY]) / 4;  // -25% per tier
+}
+
+long wallRepairCost(const Game &g) {
+    return kWallRepairCost * (4 - g.upg[U_MASONRY]) / 4;
+}
+
+long stripPoints(const Game &g) {
+    static const long kPts[3] = {kStripPoints, 8, 12};
+    return kPts[g.upg[U_SCRAP]];
+}
+
+double turretIntervalFor(const Game &g, int lvl) {
+    return turretInterval(lvl) * std::pow(0.85, g.upg[U_RAPID]);
+}
+
+double powerRespawn(const Game &g) {
+    return (16 + frand() * 14) * std::pow(0.75, g.upg[U_MAGNET]);
+}
+
+long bossBounty(const Game &g) { return 250 + 125 * g.upg[U_BOUNTY]; }
+
+// What the next tier of an upgrade will do, phrased as the state after
+// picking it — shown on the draft overlay.
+std::string upgDesc(const Game &g, int id) {
+    char buf[64];
+    int t = g.upg[id];  // current tier; the offer is tier t+1
+    switch (id) {
+        case U_FREEZE:
+            snprintf(buf, sizeof buf, "freeze lasts %.1fs",
+                     kFreezeDuration + 1.5 * (t + 1));
+            break;
+        case U_NUKE:
+            snprintf(buf, sizeof buf, "nuke strips %d letters", 2 + t + 1);
+            break;
+        case U_QUAKE: {
+            static const int kLo[5] = {1, 2, 3, 3, 4};
+            static const int kHi[5] = {5, 5, 6, 7, 8};
+            snprintf(buf, sizeof buf, "earthquake crushes %d-%d", kLo[t + 1],
+                     kHi[t + 1]);
+            break;
+        }
+        case U_HP:
+            snprintf(buf, sizeof buf, "+2 max tower hp, heals 2");
+            break;
+        case U_GUN:
+            if (t == 0)
+                snprintf(buf, sizeof buf, "the tower itself opens fire");
+            else
+                snprintf(buf, sizeof buf, "tower gun -> L%d", t + 1);
+            break;
+        case U_COMBO:
+            snprintf(buf, sizeof buf, "combo tier every %d kills", 5 - t - 1);
+            break;
+        case U_STEADY:
+            snprintf(buf, sizeof buf, "first typo per enemy forgiven");
+            break;
+        case U_MASONRY:
+            snprintf(buf, sizeof buf, "walls cost %d%% less", 25 * (t + 1));
+            break;
+        case U_SCRAP: {
+            static const long kPts[3] = {kStripPoints, 8, 12};
+            snprintf(buf, sizeof buf, "turret strips pay %ld/letter",
+                     kPts[t + 1]);
+            break;
+        }
+        case U_RAPID:
+            snprintf(buf, sizeof buf, "turrets fire %d%% faster",
+                     t == 0 ? 15 : 28);
+            break;
+        case U_MAGNET:
+            snprintf(buf, sizeof buf, "power-ups appear %d%% more often",
+                     t == 0 ? 33 : 78);
+            break;
+        case U_BOUNTY:
+            snprintf(buf, sizeof buf, "boss bounty %ld", 250 + 125L * (t + 1));
+            break;
+        default:
+            buf[0] = '\0';
+    }
+    return buf;
+}
+
+void applyUpgrade(Game &g, int id) {
+    ++g.upg[id];
+    if (id == U_HP) {
+        g.towerMaxHp += 2;
+        g.towerHp = std::min(g.towerMaxHp, g.towerHp + 2);
+    } else if (id == U_GUN) {
+        if (!g.towerGun.built) {
+            g.towerGun.built = true;
+            g.towerGun.lvl = 1;
+        } else {
+            ++g.towerGun.lvl;
+        }
+    }
+    say(g, std::string(kUpgDefs[id].name) + "!");
+}
+
+// Deal three distinct upgrades that still have tiers left. If fewer remain,
+// offer what's there; with nothing left the draft silently skips.
+void openDraft(Game &g) {
+    std::vector<int> pool;
+    for (int i = 0; i < U_COUNT; ++i)
+        if (g.upg[i] < kUpgDefs[i].maxTier) pool.push_back(i);
+    std::shuffle(pool.begin(), pool.end(), rng);
+    g.draftCount = std::min(3, static_cast<int>(pool.size()));
+    if (g.draftCount == 0) return;
+    for (int k = 0; k < g.draftCount; ++k) g.draftIds[k] = pool[k];
+    g.draftOpen = true;
+    // Don't fight the build menu for keys while paused.
+    g.cmdMode = false;
+    g.cmdPath.clear();
+    g.cmdBuf.clear();
+}
 
 const std::string &pickWord(const Game &g) {
     // Higher levels mix in more medium/long words.
@@ -359,7 +541,7 @@ void spawnPowerUp(Game &g, int rows, int cols) {
         {Kind::Freeze, "freeze"},
         {Kind::Nuke, "nuke"},
         {Kind::Quake, "earthquake"}};
-    if (g.towerHp < kTowerMaxHp) choices.push_back({Kind::Heal, "heal"});
+    if (g.towerHp < g.towerMaxHp) choices.push_back({Kind::Heal, "heal"});
 
     // Shuffle so we can fall through to another choice on a letter clash.
     std::shuffle(choices.begin(), choices.end(), rng);
@@ -398,7 +580,7 @@ bool stripLetters(Game &g, size_t i, int n) {
     int cut = std::min(n, static_cast<int>(w.size()) - e.progress);
     if (cut <= 0) return false;
     w.resize(w.size() - cut);
-    earn(g, kStripPoints * cut);
+    earn(g, stripPoints(g) * cut);
     if (e.progress < static_cast<int>(w.size())) return false;
     if (e.kind == Kind::Boss && e.wordsLeft() > 1) {
         ++e.wordIdx;
@@ -452,14 +634,14 @@ std::vector<CmdOpt> cmdOptions(const Game &g) {
         if (anyUpgradable) out.push_back({"upgrade", -1, false});
         if (platformCanQuit()) out.push_back({"quit", -1, true});
     } else if (p[0] == "build" && p.size() == 1) {
-        if (g.wallHp == 0) out.push_back({"wall", kWallCost, true});
+        if (g.wallHp == 0) out.push_back({"wall", wallCost(g), true});
         if (anyUnbuilt) out.push_back({"tower", -1, false});
     } else if (p[0] == "build" && p[1] == "tower") {
         for (int d = 0; d < 4; ++d)
             if (!g.turrets[d].built)
                 out.push_back({kDirNames[d], kTurretCost, true});
     } else if (p[0] == "repair") {
-        out.push_back({"wall", kWallRepairCost, true});
+        out.push_back({"wall", wallRepairCost(g), true});
     } else if (p[0] == "upgrade" && p.size() == 1) {
         out.push_back({"tower", -1, false});
     } else if (p[0] == "upgrade" && p[1] == "tower") {
@@ -477,11 +659,11 @@ void execCommand(Game &g) {
     if (p[0] == "quit") {
         g.quitReq = true;
     } else if (p[0] == "build" && p[1] == "wall") {
-        if (!spend(g, kWallCost)) return;
+        if (!spend(g, wallCost(g))) return;
         g.wallHp = kWallMaxHp;
         say(g, "wall raised!");
     } else if (p[0] == "repair") {
-        if (!spend(g, kWallRepairCost)) return;
+        if (!spend(g, wallRepairCost(g))) return;
         g.wallHp = kWallMaxHp;
         say(g, "wall repaired!");
     } else if (p[0] == "build") {
@@ -552,19 +734,26 @@ int nearestStrippable(const Game &g, double tx, double ty) {
     return best;
 }
 
+void turretFire(Game &g, Turret &t, double tx, double ty, double dt) {
+    t.cooldown -= dt;
+    if (t.cooldown > 0) return;
+    int best = nearestStrippable(g, tx, ty);
+    if (best == -1) return;
+    g.bullets.push_back({tx, ty, g.enemies[best].id, t.lvl});
+    t.cooldown = turretIntervalFor(g, t.lvl);
+}
+
 void updateTurrets(Game &g, double dt, int rows, int cols) {
     for (int d = 0; d < 4; ++d) {
         Turret &t = g.turrets[d];
         if (!t.built) continue;
-        t.cooldown -= dt;
-        if (t.cooldown > 0) continue;
         double tx, ty;
         turretPos(d, rows, cols, tx, ty);
-        int best = nearestStrippable(g, tx, ty);
-        if (best == -1) continue;
-        g.bullets.push_back({tx, ty, g.enemies[best].id, t.lvl});
-        t.cooldown = turretInterval(t.lvl);
+        turretFire(g, t, tx, ty, dt);
     }
+    // The tower gun (draft unlock) is a fifth turret at the center.
+    if (g.towerGun.built)
+        turretFire(g, g.towerGun, cols / 2.0, rows / 2.0, dt);
 }
 
 // Ids of enemies at least one built turret is currently locked onto — i.e.
@@ -579,6 +768,10 @@ std::vector<int> lockedTurretTargets(const Game &g, int rows, int cols) {
         double tx, ty;
         turretPos(d, rows, cols, tx, ty);
         int best = nearestStrippable(g, tx, ty);
+        if (best != -1) ids.push_back(g.enemies[best].id);
+    }
+    if (g.towerGun.built) {
+        int best = nearestStrippable(g, cols / 2.0, rows / 2.0);
         if (best != -1) ids.push_back(g.enemies[best].id);
     }
     return ids;
@@ -608,8 +801,19 @@ void updateBullets(Game &g, double dt) {
 }
 
 void update(Game &g, double dt, int rows, int cols) {
+    // A draft is a FULL pause: no movement, spawns, turrets, or clocks — so
+    // even mid-swarm the player can read three options in peace.
+    if (g.draftOpen) return;
+
     g.elapsed += dt;
     if (g.msgTimer > 0) g.msgTimer -= dt;
+
+    // Every 2nd level, deal a level-up draft.
+    int lvl = level(g);
+    if (lvl != g.prevLevel) {
+        g.prevLevel = lvl;
+        if (lvl % 2 == 0) openDraft(g);
+    }
 
     // Drop typing history that fell out of the live-WPM window.
     while (!g.typeTimes.empty() && g.typeTimes.front() < g.elapsed - kWpmWindow)
@@ -638,7 +842,7 @@ void update(Game &g, double dt, int rows, int cols) {
     g.powerTimer -= dt;
     if (g.powerTimer <= 0) {
         spawnPowerUp(g, rows, cols);
-        g.powerTimer = 16 + frand() * 14;
+        g.powerTimer = powerRespawn(g);
     }
 
     double cx = cols / 2.0, cy = rows / 2.0;
@@ -677,7 +881,8 @@ void update(Game &g, double dt, int rows, int cols) {
 
 void bumpCombo(Game &g) {
     ++g.killStreak;
-    g.combo = 1 + g.killStreak / 5;  // x2 at 5 flawless kills, x3 at 10, ...
+    // x2 at 5 flawless kills, x3 at 10, ... (fewer with combo endurance)
+    g.combo = 1 + g.killStreak / comboEvery(g);
     g.bestCombo = std::max(g.bestCombo, g.combo);
     g.bestStreak = std::max(g.bestStreak, g.killStreak);
 }
@@ -699,7 +904,9 @@ void quakeStrike(Game &g) {
     std::sort(byDist.begin(), byDist.end());
     for (const auto &p : byDist) ids.push_back(p.second);
 
-    int count = std::uniform_int_distribution<>(1, 5)(rng);
+    int lo, hi;
+    quakeRange(g, lo, hi);
+    int count = std::uniform_int_distribution<>(lo, hi)(rng);
     count = std::min(count, static_cast<int>(ids.size()));
     if (count == 0) {
         say(g, "the earthquake rumbles at nothing");
@@ -738,10 +945,11 @@ void killTarget(Game &g) {
         case Kind::Boss:
             ++g.kills;
             // Final word's points plus a flat boss bounty.
-            earn(g, (static_cast<long>(e.word().size()) * 10 + 250) * g.combo);
+            earn(g, (static_cast<long>(e.word().size()) * 10 + bossBounty(g)) *
+                        g.combo);
             break;
         case Kind::Freeze:
-            g.freezeTimer = kFreezeDuration;
+            g.freezeTimer = freezeDuration(g);
             break;
         case Kind::Nuke: {
             // Cut the last two untyped letters from every enemy's current
@@ -752,7 +960,8 @@ void killTarget(Game &g) {
                 if (isPowerUp(v.kind)) { ++i; continue; }
                 std::string &w = v.words[v.wordIdx];
                 long origLen = static_cast<long>(w.size());
-                int cut = std::min(2, static_cast<int>(w.size()) - v.progress);
+                int cut = std::min(nukeCut(g),
+                                   static_cast<int>(w.size()) - v.progress);
                 w.resize(w.size() - cut);
                 if (v.progress < static_cast<int>(w.size())) { ++i; continue; }
                 if (v.kind == Kind::Boss && v.wordsLeft() > 1) {
@@ -768,7 +977,7 @@ void killTarget(Game &g) {
             break;
         }
         case Kind::Heal:
-            g.towerHp = std::min(kTowerMaxHp, g.towerHp + kHealAmount);
+            g.towerHp = std::min(g.towerMaxHp, g.towerHp + kHealAmount);
             break;
         case Kind::Quake:
             quakeStrike(g);
@@ -813,6 +1022,11 @@ void handleKey(Game &g, int ch) {
             onCorrectLetter(g);
             if (++e.progress == static_cast<int>(e.word().size()))
                 completeWord(g);
+        } else if (g.upg[U_STEADY] && !e.forgiven) {
+            // Steady hands: the first typo on each enemy doesn't break the
+            // combo — just the flash, as a warning.
+            e.forgiven = true;
+            g.shake = true;
         } else {
             g.killStreak = 0;
             g.combo = 1;
@@ -944,9 +1158,9 @@ int overallWpm(const Game &g) {
 
 // ---- rendering -------------------------------------------------------------
 
-void drawTower(Screen &s, int hp) {
+void drawTower(const Game &g, Screen &s) {
     int cy = s.rows() / 2, cx = s.cols() / 2;
-    Color c = hp <= kTowerMaxHp / 3 ? C_RED : C_CYAN;
+    Color c = g.towerHp <= g.towerMaxHp / 3 ? C_RED : C_CYAN;
     s.print(cy - 1, cx - 2, "/MMM\\", c, true);
     s.print(cy,     cx - 2, "|###|", c, true);
     s.print(cy + 1, cx - 2, "|_#_|", c, true);
@@ -1060,9 +1274,9 @@ void drawHud(const Game &g, long highScore, Screen &s) {
 
     // HP bar bottom-left, wall status next to it.
     std::string hp = "TOWER [";
-    for (int i = 0; i < kTowerMaxHp; ++i) hp += i < g.towerHp ? '#' : ' ';
+    for (int i = 0; i < g.towerMaxHp; ++i) hp += i < g.towerHp ? '#' : ' ';
     hp += ']';
-    s.print(rows - 1, 1, hp, g.towerHp <= kTowerMaxHp / 3 ? C_RED : C_HUD);
+    s.print(rows - 1, 1, hp, g.towerHp <= g.towerMaxHp / 3 ? C_RED : C_HUD);
     if (g.wallHp > 0) {
         snprintf(buf, sizeof buf, "  WALL %d/%d", g.wallHp, kWallMaxHp);
         s.print(rows - 1, 1 + static_cast<int>(hp.size()), buf);
@@ -1117,6 +1331,31 @@ void drawHud(const Game &g, long highScore, Screen &s) {
             s.print(rows - 2, cols / 2 - static_cast<int>(g.msg.size()) / 2,
                     g.msg, C_YELLOW, true);
     }
+}
+
+// The level-up draft: a centered overlay on top of the (paused) battlefield.
+// Numbers pick — they can't collide with enemy words, so no misclicks even
+// in a full swarm.
+void drawDraft(const Game &g, Screen &s) {
+    int cy = s.rows() / 2, cx = s.cols() / 2;
+    int top = cy - 3;
+    // Blank a backdrop wide enough for the option lines.
+    for (int y = top - 1; y <= top + 3 + g.draftCount; ++y)
+        for (int x = cx - 30; x <= cx + 30; ++x) s.put(y, x, ' ');
+
+    const char *title = "L E V E L   U P  --  choose:";
+    s.print(top, cx - static_cast<int>(strlen(title)) / 2, title, C_YELLOW,
+            true);
+    for (int k = 0; k < g.draftCount; ++k) {
+        int id = g.draftIds[k];
+        char line[96];
+        snprintf(line, sizeof line, "%d) %-20s %s", k + 1, kUpgDefs[id].name,
+                 upgDesc(g, id).c_str());
+        s.print(top + 2 + k, cx - 28, line, C_WHITE);
+    }
+    const char *hint = "(game is paused)";
+    s.print(top + 3 + g.draftCount, cx - static_cast<int>(strlen(hint)) / 2,
+            hint, C_WHITE, false, true);
 }
 
 void drawGameOver(const Game &g, long highScore, Screen &s) {
@@ -1181,6 +1420,18 @@ void gameKey(int ch) {
     Game &g = G;
     if (sWelcome) {
         welcomeKey(ch);
+        return;
+    }
+    if (g.draftOpen && !g.over) {
+        // Full pause: only the number keys do anything. Letters are
+        // swallowed so the pause can't be exploited for free typing.
+        if (ch >= '1' && ch <= '3') {
+            int k = ch - '1';
+            if (k < g.draftCount) {
+                applyUpgrade(g, g.draftIds[k]);
+                g.draftOpen = false;
+            }
+        }
         return;
     }
     if (g.cmdMode) {
@@ -1250,7 +1501,7 @@ bool gameFrame(double dt, Screen &s) {
         g.shake = false;
     }
     drawWall(g, s);
-    drawTower(s, g.towerHp);
+    drawTower(g, s);
     drawTurrets(g, s);
     std::vector<int> turretTargets = lockedTurretTargets(g, s.rows(), s.cols());
     for (size_t i = 0; i < g.enemies.size(); ++i) {
@@ -1261,6 +1512,7 @@ bool gameFrame(double dt, Screen &s) {
     }
     drawCenterStats(g, s);
     drawHud(g, sHighScore, s);
+    if (g.draftOpen && !g.over) drawDraft(g, s);
     if (g.over) drawGameOver(g, sHighScore, s);
     return true;
 }
