@@ -6,7 +6,8 @@
 // speed ramp up over time; survive as long as you can and beat your record.
 //
 // Specials:
-//   power-ups  magenta words (freeze / nuke / heal) — type them to trigger
+//   power-ups  magenta words (freeze / nuke / heal / earthquake) — type
+//              them to trigger
 //   bosses     red enemies carrying several words in a row; the bar above
 //              them shows words remaining. They hit the tower for 3.
 //
@@ -109,8 +110,9 @@ const std::vector<std::string> kMediumWords = {
     "wither",  "wizard",  "wraith",  "zealot",
 };
 
+// NB: "earthquake" is reserved for the power-up of the same name.
 const std::vector<std::string> kLongWords = {
-    "avalanche", "blacksmith", "cataclysm", "dreadnought", "earthquake",
+    "avalanche", "blacksmith", "cataclysm", "dreadnought",
     "firestorm", "gargantuan", "hurricane", "juggernaut", "labyrinth",
     "maelstrom", "nightshade", "onslaught", "pestilence", "quicksilver",
     "revenant", "stronghold", "trebuchet", "underworld", "vanquisher",
@@ -126,10 +128,11 @@ const std::vector<std::string> kLongWords = {
     "tormentor", "tributary", "vengeance", "warhammer", "whirlwind",
 };
 
-enum class Kind { Normal, Boss, Freeze, Nuke, Heal };
+enum class Kind { Normal, Boss, Freeze, Nuke, Heal, Quake };
 
 bool isPowerUp(Kind k) {
-    return k == Kind::Freeze || k == Kind::Nuke || k == Kind::Heal;
+    return k == Kind::Freeze || k == Kind::Nuke || k == Kind::Heal ||
+           k == Kind::Quake;
 }
 
 struct Enemy {
@@ -353,7 +356,9 @@ void spawnPowerUp(Game &g, int rows, int cols) {
         if (isPowerUp(e.kind)) return;
 
     std::vector<std::pair<Kind, std::string>> choices = {
-        {Kind::Freeze, "freeze"}, {Kind::Nuke, "nuke"}};
+        {Kind::Freeze, "freeze"},
+        {Kind::Nuke, "nuke"},
+        {Kind::Quake, "earthquake"}};
     if (g.towerHp < kTowerMaxHp) choices.push_back({Kind::Heal, "heal"});
 
     // Shuffle so we can fall through to another choice on a letter clash.
@@ -677,6 +682,47 @@ void bumpCombo(Game &g) {
     g.bestStreak = std::max(g.bestStreak, g.killStreak);
 }
 
+// Earthquake: instantly crushes the 1-5 hostiles closest to the tower —
+// closest first, so it's a true panic button rather than a dice roll on
+// fresh spawns at the border. A struck boss loses its current word instead
+// of dying (unless it was on its last one). Collateral pays the word's
+// points but doesn't grow the combo, same as the nuke.
+void quakeStrike(Game &g) {
+    std::vector<int> ids;  // hostile ids, nearest to the tower first
+    double cx = g.viewCols / 2.0, cy = g.viewRows / 2.0;
+    std::vector<std::pair<double, int>> byDist;
+    for (const auto &e : g.enemies) {
+        if (isPowerUp(e.kind)) continue;
+        double dx = e.x - cx, dy = (e.y - cy) * kAspect;
+        byDist.push_back({dx * dx + dy * dy, e.id});
+    }
+    std::sort(byDist.begin(), byDist.end());
+    for (const auto &p : byDist) ids.push_back(p.second);
+
+    int count = std::uniform_int_distribution<>(1, 5)(rng);
+    count = std::min(count, static_cast<int>(ids.size()));
+    if (count == 0) {
+        say(g, "the earthquake rumbles at nothing");
+        return;
+    }
+    int crushed = 0;
+    for (int k = 0; k < count; ++k) {
+        int i = enemyIndexById(g, ids[k]);
+        if (i == -1) continue;
+        Enemy &v = g.enemies[static_cast<size_t>(i)];
+        earn(g, static_cast<long>(v.word().size()) * 10);
+        if (v.kind == Kind::Boss && v.wordsLeft() > 1) {
+            ++v.wordIdx;  // shaken, not destroyed: loses its current word
+            v.progress = 0;
+        } else {
+            ++g.kills;
+            removeEnemyAt(g, static_cast<size_t>(i));
+        }
+        ++crushed;
+    }
+    say(g, "earthquake! " + std::to_string(crushed) + " crushed");
+}
+
 // The targeted enemy's final word was completed: remove it and apply effects.
 void killTarget(Game &g) {
     Enemy e = std::move(g.enemies[g.target]);
@@ -723,6 +769,9 @@ void killTarget(Game &g) {
         }
         case Kind::Heal:
             g.towerHp = std::min(kTowerMaxHp, g.towerHp + kHealAmount);
+            break;
+        case Kind::Quake:
+            quakeStrike(g);
             break;
     }
 }
