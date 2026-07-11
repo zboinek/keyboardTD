@@ -528,6 +528,23 @@ void cmdBackspace(Game &g) {
 
 // ---- simulation ------------------------------------------------------------
 
+// Index of the nearest strippable (non-powerup, still has untyped letters)
+// enemy to (tx,ty), or -1. Shared by turret firing and the "who would this
+// turret shoot next" highlight, so both always agree.
+int nearestStrippable(const Game &g, double tx, double ty) {
+    int best = -1;
+    double bestDist = 1e18;
+    for (size_t i = 0; i < g.enemies.size(); ++i) {
+        const Enemy &e = g.enemies[i];
+        if (isPowerUp(e.kind)) continue;  // don't shoot the goodies
+        if (static_cast<int>(e.word().size()) <= e.progress) continue;
+        double dx = e.x - tx, dy = (e.y - ty) * kAspect;
+        double dist = dx * dx + dy * dy;
+        if (dist < bestDist) { bestDist = dist; best = static_cast<int>(i); }
+    }
+    return best;
+}
+
 void updateTurrets(Game &g, double dt, int rows, int cols) {
     for (int d = 0; d < 4; ++d) {
         Turret &t = g.turrets[d];
@@ -536,21 +553,28 @@ void updateTurrets(Game &g, double dt, int rows, int cols) {
         if (t.cooldown > 0) continue;
         double tx, ty;
         turretPos(d, rows, cols, tx, ty);
-        // Nearest strippable enemy to this turret.
-        int best = -1;
-        double bestDist = 1e18;
-        for (size_t i = 0; i < g.enemies.size(); ++i) {
-            const Enemy &e = g.enemies[i];
-            if (isPowerUp(e.kind)) continue;  // don't shoot the goodies
-            if (static_cast<int>(e.word().size()) <= e.progress) continue;
-            double dx = e.x - tx, dy = (e.y - ty) * kAspect;
-            double dist = dx * dx + dy * dy;
-            if (dist < bestDist) { bestDist = dist; best = static_cast<int>(i); }
-        }
+        int best = nearestStrippable(g, tx, ty);
         if (best == -1) continue;
         g.bullets.push_back({tx, ty, g.enemies[best].id, t.lvl});
         t.cooldown = turretInterval(t.lvl);
     }
+}
+
+// Ids of enemies at least one built turret is currently locked onto — i.e.
+// would fire at right now, cooldown notwithstanding. Recomputed fresh every
+// frame (not tied to bullets in flight) so the highlight stays on an enemy
+// the whole time a turret is working on it, not just during the brief
+// travel of each bullet.
+std::vector<int> lockedTurretTargets(const Game &g, int rows, int cols) {
+    std::vector<int> ids;
+    for (int d = 0; d < 4; ++d) {
+        if (!g.turrets[d].built) continue;
+        double tx, ty;
+        turretPos(d, rows, cols, tx, ty);
+        int best = nearestStrippable(g, tx, ty);
+        if (best != -1) ids.push_back(g.enemies[best].id);
+    }
+    return ids;
 }
 
 void updateBullets(Game &g, double dt) {
@@ -840,9 +864,12 @@ void drawTurrets(const Game &g, Screen &s) {
     }
 }
 
-// turretTargeted: a turret bullet is currently in flight toward this enemy —
-// distinct from isTarget (the word the player is actually typing), so a
-// player can tell at a glance "a turret's got this one" and type elsewhere.
+// turretTargeted: a turret is currently locked onto this enemy — it's the
+// nearest strippable target for at least one built turret, regardless of
+// whether a bullet happens to be mid-flight right now. Stays highlighted
+// the whole time a turret is working on it, distinct from isTarget (the
+// word the player is actually typing), so a player can tell at a glance
+// "a turret's got this one" and type elsewhere.
 void drawEnemy(const Enemy &e, bool isTarget, bool turretTargeted,
                 bool frozen, Screen &s) {
     int y = static_cast<int>(std::lround(e.y));
@@ -1078,13 +1105,11 @@ bool gameFrame(double dt, Screen &s) {
     drawWall(g, s);
     drawTower(s, g.towerHp);
     drawTurrets(g, s);
-    std::vector<int> turretTargets;  // enemy ids with an in-flight bullet
-    turretTargets.reserve(g.bullets.size());
-    for (const auto &b : g.bullets) turretTargets.push_back(b.targetId);
+    std::vector<int> turretTargets = lockedTurretTargets(g, s.rows(), s.cols());
     for (size_t i = 0; i < g.enemies.size(); ++i) {
-        bool shot = std::find(turretTargets.begin(), turretTargets.end(),
-                               g.enemies[i].id) != turretTargets.end();
-        drawEnemy(g.enemies[i], static_cast<int>(i) == g.target, shot,
+        bool locked = std::find(turretTargets.begin(), turretTargets.end(),
+                                 g.enemies[i].id) != turretTargets.end();
+        drawEnemy(g.enemies[i], static_cast<int>(i) == g.target, locked,
                   g.freezeTimer > 0, s);
     }
     drawCenterStats(g, s);
