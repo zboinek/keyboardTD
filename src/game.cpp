@@ -10,8 +10,8 @@
 //   bosses     red enemies carrying several words in a row; the bar above
 //              them shows words remaining. They hit the tower for 3.
 //
-// Economy (Space opens the build menu; score is your currency, but records
-// track your PEAK score, so spending never hurts your record):
+// Economy (Space opens the build menu; score is your spendable currency, but
+// records track your cumulative TOTAL score, so spending never hurts it):
 //   build   -> wall                    ring that absorbs enemies
 //           -> tower -> north/south/   auto-turret; its bullets strip
 //                       east/west      untyped letters off enemies
@@ -163,7 +163,7 @@ struct Game {
     int nextId = 0;
     int towerHp = kTowerMaxHp;
     long score = 0;      // spendable balance
-    long peakScore = 0;  // highest balance ever reached; this is the record
+    long totalScore = 0;  // cumulative points earned this run; the record
     int combo = 1;       // multiplier, grows with flawless kills
     int killStreak = 0;  // kills since last mistake
     int bestCombo = 1;
@@ -209,7 +209,7 @@ void resetGame(Game &g) {
     g = Game{};
     if (sCheatStartScore > 0) {
         g.score = sCheatStartScore;
-        g.peakScore = sCheatStartScore;
+        g.totalScore = sCheatStartScore;
         g.cheat = true;
     }
 }
@@ -233,7 +233,7 @@ double enemySpeed(const Game &g) {
 
 void earn(Game &g, long points) {
     g.score += points;
-    g.peakScore = std::max(g.peakScore, g.score);
+    g.totalScore += points;  // pure running sum: spending never sets it back
 }
 
 void say(Game &g, const std::string &m) {
@@ -793,6 +793,18 @@ void drawTower(Screen &s, int hp) {
     s.print(cy + 1, cx - 2, "|_#_|", c, true);
 }
 
+// Score-to-spend and combo, right above the tower — the player's eyes stay
+// centered during play, so this is where "can I afford it" and "do I have a
+// combo running" need to be readable without glancing at the corners.
+void drawCenterStats(const Game &g, Screen &s) {
+    int cy = s.rows() / 2, cx = s.cols() / 2;
+    char buf[32];
+    snprintf(buf, sizeof buf, "%ld | x%d", g.score, g.combo);
+    Color c = g.combo > 1 ? C_YELLOW : C_WHITE;
+    s.print(cy - 2, cx - static_cast<int>(strlen(buf)) / 2, buf, c,
+            g.combo > 1);
+}
+
 void drawWall(const Game &g, Screen &s) {
     if (g.wallHp <= 0) return;
     int rows = s.rows(), cols = s.cols();
@@ -865,11 +877,13 @@ void drawHud(const Game &g, long highScore, Screen &s) {
     char buf[128];
 
     for (int x = 0; x < cols; ++x) s.put(0, x, ' ', C_HUD);
-    snprintf(buf, sizeof buf, " SCORE %ld  x%d  WPM %d ", g.score, g.combo,
-             liveWpm(g));
+    // PTS = cumulative points earned this run (only ever grows, spending
+    // doesn't touch it); SPEND = the balance actually available right now.
+    snprintf(buf, sizeof buf, " PTS %ld  SPEND %ld  x%d  WPM %d ",
+             g.totalScore, g.score, g.combo, liveWpm(g));
     s.print(0, 1, buf, C_HUD);
     snprintf(buf, sizeof buf, " LVL %d  KILLS %d  BEST %ld ", level(g),
-             g.kills, std::max(highScore, g.peakScore));
+             g.kills, std::max(highScore, g.totalScore));
     s.print(0, cols - static_cast<int>(strlen(buf)) - 1, buf, C_HUD);
 
     if (g.freezeTimer > 0) {
@@ -939,7 +953,7 @@ void drawHud(const Game &g, long highScore, Screen &s) {
 }
 
 void drawGameOver(const Game &g, long highScore, Screen &s) {
-    bool record = !g.cheat && g.peakScore > highScore;
+    bool record = !g.cheat && g.totalScore > highScore;
     int cy = s.rows() / 2, cx = s.cols() / 2;
     char buf[96];
     // Blank a backdrop so the stats are readable over the battlefield.
@@ -948,7 +962,7 @@ void drawGameOver(const Game &g, long highScore, Screen &s) {
     const char *title = "  T O W E R   F E L L  ";
     s.print(cy - 4, cx - static_cast<int>(strlen(title)) / 2, title, C_RED,
             true);
-    snprintf(buf, sizeof buf, "peak score %-8ld kills %d", g.peakScore,
+    snprintf(buf, sizeof buf, "total score %-8ld kills %d", g.totalScore,
              g.kills);
     s.print(cy - 2, cx - 12, buf);
     snprintf(buf, sizeof buf, "level %-8d time  %ds", level(g),
@@ -1011,7 +1025,7 @@ void gameKey(int ch) {
     }
     if (g.over) {
         if (ch == '\n' || ch == '\r') {
-            if (!g.cheat && g.peakScore > sHighScore) sHighScore = g.peakScore;
+            if (!g.cheat && g.totalScore > sHighScore) sHighScore = g.totalScore;
             resetGame(g);
         } else if ((ch == 'q' || ch == 27) && platformCanQuit()) {
             sQuit = true;
@@ -1033,9 +1047,9 @@ bool gameFrame(double dt, Screen &s) {
 
     if (g.quitReq) sQuit = true;
     if (sQuit) {
-        if (!g.cheat && g.peakScore > sHighScore) {
-            platformSaveHighScore(g.peakScore);
-            sHighScore = g.peakScore;
+        if (!g.cheat && g.totalScore > sHighScore) {
+            platformSaveHighScore(g.totalScore);
+            sHighScore = g.totalScore;
         }
         return false;
     }
@@ -1046,8 +1060,8 @@ bool gameFrame(double dt, Screen &s) {
             g.cmdMode = false;  // don't let the menu eat the restart key
             g.cmdPath.clear();
             g.cmdBuf.clear();
-            if (!g.cheat && g.peakScore > sHighScore)
-                platformSaveHighScore(g.peakScore);
+            if (!g.cheat && g.totalScore > sHighScore)
+                platformSaveHighScore(g.totalScore);
         }
     }
 
@@ -1062,6 +1076,7 @@ bool gameFrame(double dt, Screen &s) {
     for (size_t i = 0; i < g.enemies.size(); ++i)
         drawEnemy(g.enemies[i], static_cast<int>(i) == g.target,
                   g.freezeTimer > 0, s);
+    drawCenterStats(g, s);
     drawHud(g, sHighScore, s);
     if (g.over) drawGameOver(g, sHighScore, s);
     return true;
@@ -1069,9 +1084,9 @@ bool gameFrame(double dt, Screen &s) {
 
 std::string gameGoodbye() {
     char buf[96];
-    long best = G.cheat ? sHighScore : std::max(sHighScore, G.peakScore);
-    snprintf(buf, sizeof buf, "final score: %ld (peak %ld)   best: %ld",
-             G.score, G.peakScore, best);
+    long best = G.cheat ? sHighScore : std::max(sHighScore, G.totalScore);
+    snprintf(buf, sizeof buf, "final score: %ld (total %ld)   best: %ld",
+             G.score, G.totalScore, best);
     return buf;
 }
 
