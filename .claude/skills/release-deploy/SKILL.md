@@ -27,13 +27,16 @@ This triggers two GitHub Actions workflows:
 ## 2. Wait for the docker workflow
 
 The server pulls `:latest`, so reloading before the **docker** workflow
-finishes redeploys the *old* image. Watch it:
+finishes redeploys the *old* image. The `gh` CLI is not installed on this
+machine; poll the public API instead:
 
 ```sh
-gh run watch --exit-status $(gh run list --workflow=docker --limit 1 --json databaseId -q '.[0].databaseId')
+curl -s "https://api.github.com/repos/zboinek/keyboardTD/actions/runs?per_page=4" \
+  | python3 -c "import json,sys; [print(r['name'], r['status'], r.get('conclusion'), r['head_branch']) for r in json.load(sys.stdin)['workflow_runs']]"
 ```
 
-(Takes several minutes — it cross-compiles for arm64 under QEMU.)
+Wait until the `docker` run for the new tag shows `completed success`
+(takes several minutes — it cross-compiles for arm64 under QEMU).
 
 ## 3. Reload the server
 
