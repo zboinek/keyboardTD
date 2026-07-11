@@ -201,6 +201,8 @@ Game G;
 long sHighScore = 0;
 long sCheatStartScore = 0;  // >0 when launched with a cheat starting score
 bool sQuit = false;
+bool sWelcome = true;          // showing the welcome screen (process start only)
+std::string sWelcomeBuf;       // letters typed toward a welcome menu word
 
 // Applies the process-wide cheat starting score (if any) to a fresh game;
 // shared by gameInit and the play-again path so the cheat persists across
@@ -794,6 +796,90 @@ void handleKey(Game &g, int ch) {
     }
 }
 
+// ---- welcome screen ----------------------------------------------------------
+
+// The welcome menu is typed like everything else: `start` begins a run,
+// `quit` exits (terminal only). Enter is a shortcut for start so first-time
+// players aren't stuck reading with no obvious way in.
+std::vector<std::string> welcomeOptions() {
+    std::vector<std::string> out = {"start"};
+    if (platformCanQuit()) out.push_back("quit");
+    return out;
+}
+
+void welcomeCommit(const std::string &word) {
+    if (word == "start") {
+        sWelcome = false;
+        resetGame(G);
+    } else if (word == "quit") {
+        sQuit = true;
+    }
+}
+
+void welcomeKey(int ch) {
+    if (ch == '\n' || ch == '\r') { welcomeCommit("start"); return; }
+    if (ch == 127 || ch == 8) {
+        if (!sWelcomeBuf.empty()) sWelcomeBuf.pop_back();
+        return;
+    }
+    if (ch < 'a' || ch > 'z') return;
+    std::string probe = sWelcomeBuf + static_cast<char>(ch);
+    bool anyPrefix = false;
+    for (const auto &o : welcomeOptions()) {
+        if (o == probe) { welcomeCommit(o); sWelcomeBuf.clear(); return; }
+        if (o.rfind(probe, 0) == 0) anyPrefix = true;
+    }
+    if (anyPrefix) sWelcomeBuf = probe;
+}
+
+void drawWelcome(long highScore, Screen &s) {
+    int cy = s.rows() / 2, cx = s.cols() / 2;
+    char buf[96];
+
+    const char *title = "K E Y B O A R D   T D";
+    s.print(cy - 8, cx - static_cast<int>(strlen(title)) / 2, title, C_CYAN,
+            true);
+    const char *sub = "a typing tower defense";
+    s.print(cy - 7, cx - static_cast<int>(strlen(sub)) / 2, sub, C_WHITE,
+            false, true);
+
+    const char *tips[] = {
+        "type an enemy's word to kill it before it reaches your tower",
+        "the first letter targets the closest match; Esc drops a target",
+        "magenta words are power-ups -- type them to trigger",
+        "red enemies are bosses: several words, and they hit for 3",
+        "Space opens the build menu: walls and turrets, paid with points",
+        "flawless kills grow your combo -- typos reset it",
+    };
+    for (int i = 0; i < 6; ++i)
+        s.print(cy - 4 + i, cx - static_cast<int>(strlen(tips[i])) / 2,
+                tips[i]);
+
+    if (highScore > 0) {
+        snprintf(buf, sizeof buf, "best score: %ld", highScore);
+        s.print(cy + 3, cx - static_cast<int>(strlen(buf)) / 2, buf, C_YELLOW);
+    }
+
+    // Options row, styled like the in-game command menu: dim words, typed
+    // letters lit up. Enter is offered as a beginner-friendly alternative.
+    auto opts = welcomeOptions();
+    int width = 0;
+    for (const auto &o : opts) width += static_cast<int>(o.size()) + 3;
+    int x = cx - width / 2;
+    for (const auto &o : opts) {
+        bool match = o.rfind(sWelcomeBuf, 0) == 0;
+        for (size_t i = 0; i < o.size(); ++i) {
+            bool hit = match && i < sWelcomeBuf.size();
+            if (hit) s.put(cy + 5, x++, o[i], C_YELLOW, true);
+            else s.put(cy + 5, x++, o[i], C_WHITE, false, true);
+        }
+        x += 3;
+    }
+    const char *hint = "type a word (or press Enter to start)";
+    s.print(cy + 7, cx - static_cast<int>(strlen(hint)) / 2, hint, C_WHITE,
+            false, true);
+}
+
 // Live WPM over the last kWpmWindow seconds (5 chars = 1 word).
 int liveWpm(const Game &g) {
     double window = std::min(kWpmWindow, std::max(5.0, g.elapsed));
@@ -1037,11 +1123,17 @@ void gameInit(long startingScore) {
     sHighScore = platformLoadHighScore();
     sCheatStartScore = startingScore;
     sQuit = false;
+    sWelcome = true;
+    sWelcomeBuf.clear();
     resetGame(G);
 }
 
 void gameKey(int ch) {
     Game &g = G;
+    if (sWelcome) {
+        welcomeKey(ch);
+        return;
+    }
     if (g.cmdMode) {
         // The menu swallows input; the game keeps running under it.
         if (ch == 27) {
@@ -1076,6 +1168,12 @@ bool gameFrame(double dt, Screen &s) {
     dt = std::min(dt, 0.1);  // don't lurch after a stall
     g.viewRows = s.rows();
     g.viewCols = s.cols();
+
+    if (sWelcome && !sQuit) {
+        s.clear();
+        drawWelcome(sHighScore, s);
+        return true;
+    }
 
     if (g.quitReq) sQuit = true;
     if (sQuit) {
