@@ -554,6 +554,31 @@ bool firstLetterTaken(const Game &g, char c) {
     return false;
 }
 
+// Two plain words clashing is rare but tolerable; a plain word clashing
+// with an active power-up is not -- the player must always be able to tell
+// a power-up apart from the very first keystroke, so this is checked and
+// enforced separately (and strictly) from firstLetterTaken above.
+bool powerUpFirstLetterTaken(const Game &g, char c) {
+    for (const auto &e : g.enemies)
+        if (e.progress == 0 && isPowerUp(e.kind) && e.word()[0] == c)
+            return true;
+    return false;
+}
+
+// Guarantees a word whose first letter doesn't clash with any active
+// power-up, even if a caller's own best-effort retry loop gave up early.
+const std::string &pickWordAvoidingPowerUps(const Game &g) {
+    for (int tries = 0; tries < 64; ++tries) {
+        const std::string &w = pickWord(g);
+        if (!powerUpFirstLetterTaken(g, w[0])) return w;
+    }
+    // Extremely unlikely fallback: scan every pool for any safe word.
+    for (const auto *pool : {&kShortWords, &kMediumWords, &kLongWords})
+        for (const auto &w : *pool)
+            if (!powerUpFirstLetterTaken(g, w[0])) return w;
+    return pickWord(g);  // no safe letter exists at all; give up
+}
+
 bool recentlyUsed(const Game &g, const std::string &w) {
     return std::find(g.recentWords.begin(), g.recentWords.end(), w) !=
            g.recentWords.end();
@@ -585,6 +610,9 @@ void spawnEnemy(Game &g, int rows, int cols) {
             (tries >= 12 || !recentlyUsed(g, word)))
             break;
     }
+    // The loop above is best-effort and may give up with a colliding word;
+    // a collision with a power-up specifically is never acceptable.
+    if (powerUpFirstLetterTaken(g, word[0])) word = pickWordAvoidingPowerUps(g);
     markUsed(g, word);
     Enemy e;
     e.id = g.nextId++;
@@ -612,6 +640,13 @@ void spawnBoss(Game &g, int rows, int cols) {
             e.words.push_back(w);
             markUsed(g, w);
             break;
+        }
+        // As in spawnEnemy: the retry loop above is best-effort, but the
+        // boss's visible (first) word must never collide with a power-up.
+        if (i == 0 && !e.words.empty() &&
+            powerUpFirstLetterTaken(g, e.words[0][0])) {
+            e.words[0] = pickWordAvoidingPowerUps(g);
+            markUsed(g, e.words[0]);
         }
     }
     e.speed = enemySpeed(g) * 0.55;  // slow, but tanky and hits for 3
@@ -645,6 +680,17 @@ void spawnPowerUp(Game &g, int rows, int cols) {
     }
 }
 
+// Reveals a boss's next word (called wherever wordIdx advances mid-fight):
+// resets typing progress and, like a fresh spawn, guarantees the newly
+// visible word never collides with an active power-up's first letter --
+// that word was only picked against firstLetterTaken back when the boss
+// spawned, so a power-up that showed up since then is never accounted for.
+void revealBossWord(Game &g, Enemy &e) {
+    e.progress = 0;
+    if (powerUpFirstLetterTaken(g, e.word()[0]))
+        e.words[e.wordIdx] = pickWordAvoidingPowerUps(g);
+}
+
 void removeEnemyAt(Game &g, size_t i) {
     if (static_cast<int>(i) == g.target) g.target = -1;
     else if (static_cast<int>(i) < g.target) --g.target;
@@ -670,7 +716,7 @@ bool stripLetters(Game &g, size_t i, int n) {
     if (e.progress < static_cast<int>(w.size())) return false;
     if (e.kind == Kind::Boss && e.wordsLeft() > 1) {
         ++e.wordIdx;
-        e.progress = 0;
+        revealBossWord(g, e);
         return false;
     }
     ++g.kills;
@@ -1006,7 +1052,7 @@ void quakeStrike(Game &g) {
         earn(g, static_cast<long>(v.word().size()) * 10);
         if (v.kind == Kind::Boss && v.wordsLeft() > 1) {
             ++v.wordIdx;  // shaken, not destroyed: loses its current word
-            v.progress = 0;
+            revealBossWord(g, v);
         } else {
             ++g.kills;
             removeEnemyAt(g, static_cast<size_t>(i));
@@ -1052,7 +1098,7 @@ void killTarget(Game &g) {
                 if (v.progress < static_cast<int>(w.size())) { ++i; continue; }
                 if (v.kind == Kind::Boss && v.wordsLeft() > 1) {
                     ++v.wordIdx;
-                    v.progress = 0;
+                    revealBossWord(g, v);
                     ++i;
                     continue;
                 }
@@ -1082,7 +1128,7 @@ void completeWord(Game &g) {
     if (e.kind == Kind::Boss && e.wordsLeft() > 1) {
         earn(g, static_cast<long>(e.word().size()) * 10 * g.combo);
         ++e.wordIdx;
-        e.progress = 0;  // next word starts fresh; boss stays targeted
+        revealBossWord(g, e);  // next word starts fresh; boss stays targeted
         return;
     }
     killTarget(g);
