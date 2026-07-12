@@ -8,6 +8,33 @@ description: Cut a keyboardTD release and reload the game on the remote server (
 Releases are tag-driven; the server only ever runs `ghcr.io/zboinek/keyboardtd:latest`.
 Deploying = push a tag, let CI build the image, then pull + restart on the server.
 
+## 0. Sandboxed agent? Check push access first
+
+This skill sometimes runs inside a sandboxed agent that has a forwarded SSH
+agent (so `ssh app-server-2` works) but no GitHub credentials (so `git push`
+to GitHub hangs or fails auth). Server-side SSH work and the GitHub push are
+independent — losing one doesn't mean losing the other.
+
+If `git push origin main --tags` (step 1) fails or hangs from the sandbox:
+
+1. Do NOT work around it — no alternate remotes, no committing credentials,
+   no bypassing hooks. The push has to happen from a human's host terminal.
+2. Still do whatever server-side prep you can from the sandbox over SSH —
+   e.g. compose file edits described in step 3. There's no `~/.ssh/config`
+   in the sandbox, so address the server explicitly:
+   `ssh -p 3000 zboinek@195.167.155.15 ...` (the forwarded agent
+   authenticates). Back up `~/apps/docker-compose.yml` before editing it
+   (`cp docker-compose.yml docker-compose.yml.bak-<version>`).
+3. Add a "⚠️ ONE-TIME: finish the `<version>` release — DELETE THIS SECTION
+   WHEN DONE" section at the very top of this file (above this one), stating:
+   the commit/tag staged locally but unpushed, exactly what server-side prep
+   is already done (and where the backup file is, if any), and the precise
+   remaining commands — starting with `git push origin main --tags` — to run
+   **from the host terminal, not the sandbox**, through steps 2-4 below,
+   ending with deleting that section and any `.bak-<version>` file.
+4. Tell the user directly that the release can't be finished from the
+   sandbox and ask them to run those steps from their host terminal.
+
 ## 1. Tag and push
 
 Tags are bare versions (`0.1.0`, `0.1.1`, ...). Pick the next semver
