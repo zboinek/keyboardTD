@@ -12,6 +12,9 @@ tower. Everything — fighting, shopping, even quitting — is done by typing.
 - **Browser** (nothing to install): **<https://td.zboina.pl>** — runs
   client-side, zero input latency, and your best runs can enter the online
   hall of fame.
+- **SSH** (nothing to install either): **`ssh td.zboina.pl`** — the real
+  terminal game, any username, no password. Same online hall of fame as
+  the browser version.
 - **Terminal**: grab a binary from the
   [releases page](https://github.com/zboinek/keyboardTD/releases) — Linux
   x64, macOS arm64, and a standalone Windows `.exe`.
@@ -89,8 +92,8 @@ tiers total, so every run builds different.
 - Combo grows every 5 flawless kills; a typo or a leaked enemy resets it.
 - The HUD splits **PTS** (everything you've earned — your record) from
   **SPEND** (what's in your pocket): spending never hurts your high score.
-- On the web version, a top-10 run lets you type a nick onto the shared
-  **hall of fame** (best 10 runs, shown on the welcome screen).
+- On the web and SSH versions, a top-10 run lets you type a nick onto the
+  shared **hall of fame** (best 10 runs, shown on the welcome screen).
 
 ---
 
@@ -116,12 +119,27 @@ Emscripten image, serves with nginx):
 
 ```sh
 docker build -t keyboardtd .
-docker run --rm -p 8080:80 -v "$PWD/data:/data" keyboardtd
-# open http://localhost:8080
+docker run --rm -p 8080:80 -p 5555:5555 -v "$PWD/data:/data" keyboardtd
+# open http://localhost:8080   — or:  ssh -p 5555 localhost
 ```
 
 With the Emscripten SDK installed locally, `make web` builds the static
 site into `dist/web/` instead.
+
+### SSH server
+
+`server/ssh` is a small Go server (gliderlabs/ssh + creack/pty) bundled
+into the same image. Each connection gets the ncurses build on a fresh
+PTY in a throwaway directory; a pair of pipes (fds 3/4) bridges
+hall-of-fame traffic to the API above, with the SSH client's IP in
+`X-Real-IP` so the per-IP limits hit the player. No auth, no exec, no
+forwarding — the game is all you can reach.
+
+Abuse limits (env-tunable): `KTD_SSH_MAX_SESSIONS` (40),
+`KTD_SSH_MAX_PER_IP` (3), `KTD_SSH_IDLE_TIMEOUT` (5m, counts keystrokes,
+not output), `KTD_SSH_MAX_SESSION` (2h). The ed25519 host key is
+generated on first boot and kept at `/data/ssh_host_ed25519_key`, so
+players don't see host-key warnings after a redeploy.
 
 ### Hall-of-fame API
 

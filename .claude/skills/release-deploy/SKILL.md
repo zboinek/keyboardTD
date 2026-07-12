@@ -57,6 +57,20 @@ mount a volume for `/data` or scores are lost on every redeploy:
 Check it's there before reloading; add it once if missing. The API's rate
 limiting reads `X-Real-IP`, which the outer nginx-proxy sets by default.
 
+Since the SSH frontend the image also runs `ktd-ssh` on container port
+5555 (`ssh td.zboina.pl` works because port 22 on the public IP is NATed
+to port 5555 on app-server-2's internal address). The compose service
+MUST publish it:
+
+```yaml
+    ports:
+      - "5555:5555"
+```
+
+The `/data` volume now also holds the SSH host key
+(`ssh_host_ed25519_key`) — losing it means every returning player gets a
+scary host-key-changed warning, one more reason the volume must stay.
+
 ```sh
 ssh app-server-2 'cd ~/apps && docker compose pull keyboardtd && docker compose up -d keyboardtd'
 ```
@@ -66,6 +80,7 @@ ssh app-server-2 'cd ~/apps && docker compose pull keyboardtd && docker compose 
 ```sh
 ssh app-server-2 'docker ps --filter name=keyboardtd --format "{{.Image}} {{.Status}}"'
 curl -sI https://td.zboina.pl | head -1   # expect HTTP 200
+ssh -o StrictHostKeyChecking=no td.zboina.pl exit   # expect the "no commands here" notice
 ```
 
 Confirm the running image digest changed / the container restarted recently.
