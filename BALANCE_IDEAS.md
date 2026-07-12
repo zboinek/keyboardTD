@@ -25,6 +25,11 @@ Combo reset on any typo makes income roughly quadratic in skill.
   level; word-length ramp halved (long share 0.04 → 0.02/lvl, medium
   0.05 → 0.025/lvl). Re-playtest before touching anything below — the
   economy complaints may shrink once players survive long enough to earn.
+- **Reprice the wall.** Was 10,000 build / 2,500 repair for 10 absorbed
+  enemies ≈ 1,000 pts per block vs ~50–150 earned per kill — worst deal in
+  the shop and the most expensive item. Now 4,000 build / 1,200 repair
+  (`kWallCost`, `kWallRepairCost` in src/game.cpp), the natural midgame
+  panic purchase. Masonry upgrade discount still applies on top.
 
 ## Deferred ideas, in rough priority order
 
@@ -32,23 +37,19 @@ Combo reset on any typo makes income roughly quadratic in skill.
    first 90s), each subsequent one pricier, e.g. `kTurretCost * (1 + built)`.
    The first purchase teaches "spending is the game"; flat cheapness would be
    shallow, an escalating curve is progression.
-2. **Reprice the wall.** 10,000 for 10 absorbed enemies ≈ 1,000 pts per
-   block vs ~50–150 earned per kill — worst deal in the shop and the most
-   expensive item. Try ~4,000 build / ~1,200 repair: the natural midgame
-   panic purchase.
-3. **Softer combo break.** On typo, drop one tier (`killStreak -= 5`, floor
+2. **Softer combo break.** On typo, drop one tier (`killStreak -= 5`, floor
    0) instead of resetting to x1. Keep the full reset when an enemy reaches
    the tower. Roughly doubles average-typist income without moving the top.
-4. **Boss bounty scales with size.** Flat 250 ignores that bosses are up to
+3. **Boss bounty scales with size.** Flat 250 ignores that bosses are up to
    5 words (~30 letters of committed typing). Try `150 * words.size() *
    combo`. Bosses become the midgame paycheck that funds the next turret:
    survive → cash out → build.
-5. **Turrets as farms.** `kStripPoints = 5` means a L1 turret earns
+4. **Turrets as farms.** `kStripPoints = 5` means a L1 turret earns
    ~115 pts/min — a 70-minute payback on 8,000. Raise strip income so a
    turret pays back in ~3–4 min and "turret as investment" is real without
    any new UI. (Supersedes the dedicated farm-building idea: a farm is a
    fine strategic fork later, but adds menu words + tuning surface now.)
-6. **Adaptive ramp (speculative).** `liveWpm()` is already measured — cap
+5. **Adaptive ramp (speculative).** `liveWpm()` is already measured — cap
    spawn pressure at a fraction of demonstrated throughput (~80% early,
    drifting past 100%) so every player gets a personalized curve and the
    swarm still eventually comes. Watch for rubber-banding feel.

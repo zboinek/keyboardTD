@@ -51,13 +51,16 @@ constexpr int kHealAmount = 3;
 constexpr double kWpmWindow = 15.0;  // seconds of typing history for live WPM
 constexpr int kRecentWordsCap = 20;  // words to avoid repeating right away
 
-constexpr long kWallCost = 10000;
-constexpr long kWallRepairCost = 2500;
+constexpr long kWallCost = 4000;
+constexpr long kWallRepairCost = 1200;
 constexpr int kWallMaxHp = 10;
 constexpr long kTurretCost = 8000;
 constexpr long kUpgradeCostPerLvl = 6000;  // upgrade = 6000 x current level
 constexpr int kMaxTurretLvl = 4;
-constexpr long kStripPoints = 5;  // passive income per letter a bullet strips
+constexpr long kStripPoints = 5;  // points earned per letter a turret bullet
+                                   // strips off an enemy's word (passive
+                                   // income, separate from the player's
+                                   // typed-kill reward)
 constexpr double kBulletSpeed = 45.0;  // physical units per second
 
 const char *kDirNames[4] = {"north", "south", "east", "west"};
@@ -176,7 +179,7 @@ enum Upg {
     U_COMBO,    // combo tier needs fewer kills
     U_STEADY,   // first typo on each enemy doesn't break the combo
     U_MASONRY,  // walls cost less
-    U_SCRAP,    // turret strips pay more per letter
+    U_SCRAP,    // turrets pay more points per letter they strip off enemies
     U_RAPID,    // turrets fire faster
     U_MAGNET,   // power-ups spawn more often
     U_BOUNTY,   // bosses pay a bigger bounty
@@ -193,7 +196,7 @@ const UpgDef kUpgDefs[U_COUNT] = {
     {"stronger earthquake", 4}, {"reinforced tower", 3},
     {"tower gun", 4},           {"combo endurance", 2},
     {"steady hands", 1},        {"masonry", 2},
-    {"scrap value", 2},         {"rapid turrets", 2},
+    {"turret scrap", 2},        {"rapid turrets", 2},
     {"power magnet", 2},        {"bounty hunter", 2},
 };
 
@@ -478,7 +481,7 @@ std::string upgDesc(const Game &g, int id) {
             break;
         case U_SCRAP: {
             static const long kPts[3] = {kStripPoints, 8, 12};
-            snprintf(buf, sizeof buf, "turret strips pay %ld/letter",
+            snprintf(buf, sizeof buf, "turret hits pay %ld pts/letter",
                      kPts[t + 1]);
             break;
         }
