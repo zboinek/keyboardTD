@@ -34,6 +34,43 @@ void platformSaveHighScore(long hs) {
 
 bool platformCanQuit() { return true; }
 
+const char *kThemeFile = "theme.txt";
+
+std::string platformLoadThemeName() {
+    std::ifstream f(kThemeFile);
+    std::string name;
+    std::getline(f, name);
+    return name;
+}
+
+void platformSaveThemeName(const std::string &name) {
+    std::ofstream f(kThemeFile);
+    f << name << "\n";
+}
+
+// Recolor the terminal's palette in place. Only works where the terminal
+// lets curses redefine colors (can_change_color); elsewhere the picker is
+// a no-op and the terminal keeps its native scheme — the web build is the
+// primary audience for themes. Custom indices 16/17 carry the theme's
+// bg/fg so assume_default_colors can restyle everything drawn in
+// C_DEFAULT, without clobbering the standard eight.
+void platformApplyTheme(const Theme &t) {
+    if (!has_colors() || !can_change_color()) return;
+    auto set = [](short idx, const char *hex) {
+        int r, g, b;
+        if (std::sscanf(hex, "#%2x%2x%2x", &r, &g, &b) != 3) return;
+        init_color(idx, static_cast<short>(r * 1000 / 255),
+                   static_cast<short>(g * 1000 / 255),
+                   static_cast<short>(b * 1000 / 255));
+    };
+    for (short i = 0; i < 8; ++i) set(i, t.ansi[i]);
+    if (COLORS > 17) {
+        set(16, t.bg);
+        set(17, t.fg);
+        assume_default_colors(17, 16);
+    }
+}
+
 // No online hall of fame from the terminal build.
 bool platformHasLeaderboard() { return false; }
 void platformFetchScores() {}
@@ -97,6 +134,8 @@ int main(int argc, char **argv) {
             if (ch == KEY_RESIZE) continue;
             if (ch == KEY_BACKSPACE) ch = 127;
             if (ch == KEY_ENTER) ch = '\n';
+            if (ch == KEY_UP) ch = kKeyUp;
+            if (ch == KEY_DOWN) ch = kKeyDown;
             gameKey(ch);
         }
 

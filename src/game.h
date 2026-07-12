@@ -13,6 +13,11 @@
 
 namespace ktd {
 
+// Arrow keys, used by the theme picker. Frontends map their native codes
+// (curses KEY_UP, xterm escape sequences) onto these before calling gameKey.
+constexpr int kKeyUp = 1000;
+constexpr int kKeyDown = 1001;
+
 enum Color : unsigned char {
     C_DEFAULT = 0,  // terminal default fg/bg
     C_CYAN,
@@ -61,11 +66,30 @@ private:
     std::vector<Cell> cells_;
 };
 
+// A color scheme: hex "#rrggbb" strings for the background, the default
+// foreground, and the 16 ANSI colors (0-7 normal, 8-15 bright). The game
+// ships a fixed set (see kThemes in game.cpp); the welcome menu's `theme`
+// entry picks one and the frontend applies it however it can.
+struct Theme {
+    const char *name;
+    const char *bg;
+    const char *fg;
+    const char *ansi[16];
+};
+
 // Implemented by each frontend: terminal uses highscore.txt, web uses
 // localStorage; a browser tab can't quit, so the menu hides the option.
 long platformLoadHighScore();
 void platformSaveHighScore(long hs);
 bool platformCanQuit();
+
+// Theme support. Apply repaints the frontend's palette immediately (the
+// picker previews live); load/save persist the chosen theme's name next to
+// the high score. A frontend that can't recolor may make apply a no-op —
+// the picker still works, it just changes nothing visible.
+void platformApplyTheme(const Theme &t);
+std::string platformLoadThemeName();
+void platformSaveThemeName(const std::string &name);
 
 // Online hall of fame (web build only; the terminal build stubs these out).
 // Fetch and submit are fire-and-forget async: results arrive later via
@@ -80,7 +104,8 @@ void gameSetScores(const std::string &data);
 // with that many points and never touches the high score.
 void gameInit(long startingScore = 0);
 
-// Feed one raw key: 'a'..'z', ' ', 27 = Esc, 8/127 = Backspace, 10/13 = Enter.
+// Feed one raw key: 'a'..'z', ' ', 27 = Esc, 8/127 = Backspace, 10/13 = Enter,
+// plus kKeyUp/kKeyDown for the theme picker.
 void gameKey(int ch);
 
 // Advance the simulation by dt seconds and draw the frame into s.

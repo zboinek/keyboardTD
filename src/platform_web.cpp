@@ -26,6 +26,30 @@ EM_JS(int, js_load_highscore, (), {
 EM_JS(void, js_save_highscore, (int v), {
     try { localStorage.setItem('ktd_highscore', String(v)); } catch (e) {}
 });
+// Theme spec is one space-separated string: bg fg then the 16 ANSI colors.
+// xterm.js repaints the whole grid the moment options.theme changes, which
+// is what makes the picker's live preview instant.
+EM_JS(void, js_apply_theme, (const char *spec), {
+    const p = UTF8ToString(spec).split(' ');
+    document.body.style.background = p[0];
+    Module.term.options.theme = {
+        background: p[0], foreground: p[1],
+        black: p[2], red: p[3], green: p[4], yellow: p[5],
+        blue: p[6], magenta: p[7], cyan: p[8], white: p[9],
+        brightBlack: p[10], brightRed: p[11], brightGreen: p[12],
+        brightYellow: p[13], brightBlue: p[14], brightMagenta: p[15],
+        brightCyan: p[16], brightWhite: p[17],
+    };
+});
+EM_JS(void, js_load_theme, (char *buf, int len), {
+    let v = '';
+    try { v = localStorage.getItem('ktd_theme') || ''; } catch (e) {}
+    stringToUTF8(v, buf, len);
+});
+EM_JS(void, js_save_theme, (const char *name), {
+    try { localStorage.setItem('ktd_theme', UTF8ToString(name)); }
+    catch (e) {}
+});
 // The hall-of-fame API lives on the same origin (nginx proxies /api/ to a
 // sidecar process), so plain fetch works with no CORS setup. Both calls
 // are fire-and-forget; whenever a fresh top-10 arrives it's pushed back
@@ -67,6 +91,20 @@ void platformSaveHighScore(long hs) {
     js_save_highscore(static_cast<int>(hs));
 }
 bool platformCanQuit() { return false; }  // it's a browser tab — just close it
+
+void platformApplyTheme(const Theme &t) {
+    std::string spec = std::string(t.bg) + " " + t.fg;
+    for (const char *c : t.ansi) spec += std::string(" ") + c;
+    js_apply_theme(spec.c_str());
+}
+std::string platformLoadThemeName() {
+    char buf[64];
+    js_load_theme(buf, sizeof buf);
+    return buf;
+}
+void platformSaveThemeName(const std::string &name) {
+    js_save_theme(name.c_str());
+}
 
 bool platformHasLeaderboard() { return true; }
 void platformFetchScores() { js_fetch_scores(); }

@@ -250,12 +250,76 @@ struct Game {
     bool nickSent = false;    // already submitted this run
 };
 
+// ---- themes ------------------------------------------------------------------
+// A curated dozen from iterm2colorschemes.com plus Classic, the stock look
+// (xterm.js's Tango-based defaults on the page's near-black background).
+// Picked on the welcome screen; the frontend repaints live as you browse.
+
+const Theme kThemes[] = {
+    {"Classic", "#101014", "#ffffff",
+     {"#2e3436", "#cc0000", "#4e9a06", "#c4a000", "#3465a4", "#75507b",
+      "#06989a", "#d3d7cf", "#555753", "#ef2929", "#8ae234", "#fce94f",
+      "#729fcf", "#ad7fa8", "#34e2e2", "#eeeeec"}},
+    {"0x96f", "#262427", "#fcfcfa",
+     {"#262427", "#ff666d", "#b3e03a", "#ffc739", "#00cde8", "#a392e8",
+      "#9deaf6", "#fcfcfa", "#545452", "#ff7e83", "#bee55e", "#ffd05e",
+      "#1bd5eb", "#b0a3eb", "#acedf8", "#fcfcfa"}},
+    {"3024 Day", "#f7f7f7", "#4a4543",
+     {"#090300", "#db2d20", "#01a252", "#caba00", "#01a0e4", "#a16a94",
+      "#8fbece", "#a5a2a2", "#5c5855", "#dbaec3", "#3a3432", "#4a4543",
+      "#807d7c", "#bcbbba", "#cdab53", "#f7f7f7"}},
+    {"Aardvark Ink", "#0f141f", "#b4bcca",
+     {"#222734", "#c26265", "#52aa60", "#ad9b49", "#487fd4", "#af5bd1",
+      "#269d9a", "#5a6377", "#3a4152", "#e48383", "#75cf84", "#c7b461",
+      "#76a8f2", "#d58bf0", "#52c4c0", "#dfe5ee"}},
+    {"Adventure Time", "#1f1d45", "#f8dcc0",
+     {"#050404", "#bd0013", "#4ab118", "#e7741e", "#0f4ac6", "#665993",
+      "#70a598", "#f8dcc0", "#4e7cbf", "#fc5f5a", "#9eff6e", "#efc11a",
+      "#1997c6", "#9b5953", "#c8faf4", "#f6f5fb"}},
+    {"Afterglow", "#212121", "#d0d0d0",
+     {"#151515", "#ac4142", "#7e8e50", "#e5b567", "#6c99bb", "#9f4e85",
+      "#7dd6cf", "#d0d0d0", "#505050", "#ac4142", "#7e8e50", "#e5b567",
+      "#6c99bb", "#9f4e85", "#7dd6cf", "#f5f5f5"}},
+    {"Aizen Dark", "#1a1a1a", "#d0d6f0",
+     {"#1a1a1a", "#f08898", "#a4e09c", "#f5dea4", "#84b4f8", "#c8a2f4",
+      "#90dcd0", "#d0d6f0", "#444444", "#f08898", "#a4e09c", "#f5dea4",
+      "#84b4f8", "#c8a2f4", "#90dcd0", "#ffffff"}},
+    {"Apple Classic", "#2c2b2b", "#d5a200",
+     {"#000000", "#c91b00", "#00c200", "#c7c400", "#1c3fe1", "#ca30c7",
+      "#00c5c7", "#c7c7c7", "#686868", "#ff6e67", "#5ffa68", "#fffc67",
+      "#6871ff", "#ff77ff", "#60fdff", "#ffffff"}},
+    {"Arcoiris", "#201f1e", "#eee4d9",
+     {"#333333", "#da2700", "#12c258", "#ffc656", "#518bfc", "#e37bd9",
+      "#63fad5", "#bab2b2", "#777777", "#ffb9b9", "#e3f6aa", "#ffddaa",
+      "#b3e8f3", "#cbbaf9", "#bcffc7", "#efefef"}},
+    {"Atom One Dark", "#21252b", "#abb2bf",
+     {"#21252b", "#e06c75", "#98c379", "#e5c07b", "#61afef", "#c678dd",
+      "#56b6c2", "#abb2bf", "#767676", "#e06c75", "#98c379", "#e5c07b",
+      "#61afef", "#c678dd", "#56b6c2", "#abb2bf"}},
+    {"Birds Of Paradise", "#2a1f1d", "#e0dbb7",
+     {"#573d26", "#be2d26", "#6ba18a", "#e99d2a", "#5a86ad", "#ac80a6",
+      "#74a6ad", "#e0dbb7", "#9b6c4a", "#e84627", "#95d8ba", "#d0d150",
+      "#b8d3ed", "#d19ecb", "#93cfd7", "#fff9d5"}},
+    {"Obsidian", "#283033", "#cdcdcd",
+     {"#000000", "#b30d0e", "#00bb00", "#fecd22", "#3a9bdb", "#bb00bb",
+      "#00bbbb", "#bbbbbb", "#555555", "#ff0003", "#93c863", "#fef874",
+      "#a1d7ff", "#ff55ff", "#55ffff", "#ffffff"}},
+    {"Pro Light", "#ffffff", "#191919",
+     {"#000000", "#e5492b", "#50d148", "#c6c440", "#3b75ff", "#ed66e8",
+      "#4ed2de", "#c2c2c2", "#9f9f9f", "#ff6640", "#48d53e", "#bfbe23",
+      "#0082ff", "#ff7eff", "#3bd1d2", "#f2f2f2"}},
+};
+constexpr int kThemeCount = sizeof(kThemes) / sizeof(kThemes[0]);
+
 Game G;
 long sHighScore = 0;
 long sCheatStartScore = 0;  // >0 when launched with a cheat starting score
 bool sQuit = false;
 bool sWelcome = true;          // showing the welcome screen (process start only)
 std::string sWelcomeBuf;       // letters typed toward a welcome menu word
+int sThemeIdx = 0;             // the committed (saved) theme
+bool sThemeOpen = false;       // theme picker overlay on the welcome screen
+int sThemeSel = 0;             // picker cursor; previews are applied live
 
 // Online hall of fame, best first — filled asynchronously by the platform
 // via gameSetScores; empty on the terminal build.
@@ -1081,10 +1145,11 @@ void handleKey(Game &g, int ch) {
 // ---- welcome screen ----------------------------------------------------------
 
 // The welcome menu is typed like everything else: `start` begins a run,
-// `quit` exits (terminal only). Enter is a shortcut for start so first-time
-// players aren't stuck reading with no obvious way in.
+// `theme` opens the color-scheme picker, `quit` exits (terminal only).
+// Enter is a shortcut for start so first-time players aren't stuck reading
+// with no obvious way in.
 std::vector<std::string> welcomeOptions() {
-    std::vector<std::string> out = {"start"};
+    std::vector<std::string> out = {"start", "theme"};
     if (platformCanQuit()) out.push_back("quit");
     return out;
 }
@@ -1093,12 +1158,34 @@ void welcomeCommit(const std::string &word) {
     if (word == "start") {
         sWelcome = false;
         resetGame(G);
+    } else if (word == "theme") {
+        sThemeOpen = true;
+        sThemeSel = sThemeIdx;
     } else if (word == "quit") {
         sQuit = true;
     }
 }
 
+// The picker previews instantly: moving the cursor repaints the whole
+// screen in that scheme. Enter keeps it (and persists), Esc/Backspace
+// snaps back to the committed one.
+void themePickerKey(int ch) {
+    if (ch == kKeyUp || ch == kKeyDown) {
+        int step = ch == kKeyDown ? 1 : kThemeCount - 1;
+        sThemeSel = (sThemeSel + step) % kThemeCount;
+        platformApplyTheme(kThemes[sThemeSel]);
+    } else if (ch == '\n' || ch == '\r') {
+        sThemeIdx = sThemeSel;
+        platformSaveThemeName(kThemes[sThemeIdx].name);
+        sThemeOpen = false;
+    } else if (ch == 27 || ch == 127 || ch == 8) {
+        platformApplyTheme(kThemes[sThemeIdx]);
+        sThemeOpen = false;
+    }
+}
+
 void welcomeKey(int ch) {
+    if (sThemeOpen) { themePickerKey(ch); return; }
     if (ch == '\n' || ch == '\r') { welcomeCommit("start"); return; }
     if (ch == 127 || ch == 8) {
         if (!sWelcomeBuf.empty()) sWelcomeBuf.pop_back();
@@ -1114,7 +1201,48 @@ void welcomeKey(int ch) {
     if (anyPrefix) sWelcomeBuf = probe;
 }
 
+// The theme picker replaces the welcome screen while open: a list of
+// schemes with the cursor row highlighted, plus a swatch line so every
+// game color is on screen while you compare schemes.
+void drawThemePicker(Screen &s) {
+    int cy = s.rows() / 2, cx = s.cols() / 2;
+    int top = cy - kThemeCount / 2 - 3;
+
+    const char *title = "T H E M E";
+    s.print(top, cx - static_cast<int>(strlen(title)) / 2, title, C_CYAN,
+            true);
+    for (int i = 0; i < kThemeCount; ++i) {
+        std::string line = kThemes[i].name;
+        bool sel = i == sThemeSel;
+        if (sel) line = "> " + line + " <";
+        s.print(top + 2 + i, cx - static_cast<int>(line.size()) / 2, line,
+                sel ? C_YELLOW : C_WHITE, sel, !sel);
+    }
+
+    int y = top + 3 + kThemeCount;
+    const struct { const char *word; Color c; } swatches[] = {
+        {"cyan", C_CYAN},     {"green", C_GREEN}, {"yellow", C_YELLOW},
+        {"red", C_RED},       {"magenta", C_MAGENTA}, {"white", C_WHITE},
+    };
+    int width = 0;
+    for (const auto &sw : swatches)
+        width += static_cast<int>(strlen(sw.word)) + 2;
+    int x = cx - width / 2;
+    for (const auto &sw : swatches) {
+        s.print(y, x, sw.word, sw.c, true);
+        x += static_cast<int>(strlen(sw.word)) + 2;
+    }
+
+    const char *hint = "Up/Down: preview   Enter: keep   Esc: back";
+    s.print(y + 2, cx - static_cast<int>(strlen(hint)) / 2, hint, C_WHITE,
+            false, true);
+}
+
 void drawWelcome(long highScore, Screen &s) {
+    if (sThemeOpen) {
+        drawThemePicker(s);
+        return;
+    }
     int cy = s.rows() / 2, cx = s.cols() / 2;
     char buf[96];
 
@@ -1458,6 +1586,14 @@ void gameInit(long startingScore) {
     sQuit = false;
     sWelcome = true;
     sWelcomeBuf.clear();
+    // Restore the saved theme. Nothing saved (or Classic) means don't touch
+    // the palette at all — a terminal keeps its native colors that way.
+    sThemeIdx = 0;
+    sThemeOpen = false;
+    std::string themeName = platformLoadThemeName();
+    for (int i = 1; i < kThemeCount; ++i)
+        if (themeName == kThemes[i].name) sThemeIdx = i;
+    if (sThemeIdx > 0) platformApplyTheme(kThemes[sThemeIdx]);
     if (platformHasLeaderboard()) platformFetchScores();
     resetGame(G);
 }

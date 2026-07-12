@@ -47,8 +47,12 @@
       syncSize();
       term.onData((d) => {
         // Single chars only: letters, Space, Enter (\r), Backspace (\x7f)
-        // and a lone Esc (\x1b). Multi-char escape sequences (arrow keys
-        // etc.) are dropped so a stray \x1b can't drop the player's target.
+        // and a lone Esc (\x1b) — plus Up/Down arrows, forwarded as the
+        // game's kKeyUp/kKeyDown codes for the theme picker. Other
+        // multi-char escape sequences are dropped so a stray \x1b can't
+        // drop the player's target.
+        if (d === '\x1b[A') { Module.ccall('web_key', null, ['number'], [1000]); return; }
+        if (d === '\x1b[B') { Module.ccall('web_key', null, ['number'], [1001]); return; }
         if (d.length !== 1) return;
         Module.ccall('web_key', null, ['number'], [d.charCodeAt(0)]);
       });
