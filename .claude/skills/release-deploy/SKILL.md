@@ -5,25 +5,6 @@ description: Cut a keyboardTD release and reload the game on the remote server (
 
 # Releasing keyboardTD and reloading app-server-2
 
-## ⚠️ ONE-TIME: finish the 0.4.0 (SSH frontend) release — DELETE THIS SECTION WHEN DONE
-
-State as of 2026-07-12: commit `bf5109b` + tag `0.4.0` (feat: play over ssh)
-exist on local `main` but are NOT pushed — the sandbox couldn't authenticate
-to GitHub, so the push happens from the host terminal. The server-side
-compose edit is ALREADY DONE (`ports: "5555:5555"` added to the keyboardtd
-service on app-server-2; backup at `~/apps/docker-compose.yml.bak-0.4.0`;
-the `/data` volume was already present). Remaining steps:
-
-1. From the host terminal (not the sandbox): `git push origin main --tags`
-2. Wait for the **docker** workflow for `0.4.0` to complete (step 2 below).
-3. Reload: `ssh app-server-2 'cd ~/apps && docker compose pull keyboardtd && docker compose up -d keyboardtd'`
-   (from the sandbox use: `ssh -p 3000 zboinek@195.167.155.15 ...` — no
-   ~/.ssh/config in there, the forwarded agent authenticates)
-4. Verify per step 4 below, including `ssh td.zboina.pl` showing the game.
-5. Delete this whole section and the `.bak-0.4.0` file on the server.
-
-
-
 Releases are tag-driven; the server only ever runs `ghcr.io/zboinek/keyboardtd:latest`.
 Deploying = push a tag, let CI build the image, then pull + restart on the server.
 
