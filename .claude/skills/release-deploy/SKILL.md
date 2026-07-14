@@ -3,33 +3,6 @@ name: release-deploy
 description: Cut a keyboardTD release and reload the game on the remote server (app-server-2 / td.zboina.pl). Use when asked to release, deploy, push a new version to the server, or reload the remote container.
 ---
 
-## ⚠️ ONE-TIME: finish the `0.4.1` release — DELETE THIS SECTION WHEN DONE
-
-Commit `c128111` ("fix: keep boss words from clashing with an active
-power-up's letter") and tag `0.4.1` are staged locally on `main` in the
-sandbox but **not pushed** — `git push origin main --tags` failed from the
-sandbox with `Connection closed by 140.82.121.4 port 22` (no GitHub SSH
-credentials here; `origin` is `git@github.com:zboinek/keyboardTD.git`).
-
-Server-side prep: checked, nothing to change. `~/apps/docker-compose.yml`
-on app-server-2 already has both the `./keyboardtd-data:/data` volume and
-the `5555:5555` port mapping for the `keyboardtd` service. No backup file
-was made since nothing was edited.
-
-Remaining steps, run from your **host terminal** (not the sandbox):
-
-```sh
-git push origin main --tags
-```
-
-Then continue with steps 2-4 of this skill (below) as normal: poll the
-`docker` GitHub Actions run for tag `0.4.1` until it's `completed success`,
-then `ssh app-server-2 'cd ~/apps && docker compose pull keyboardtd && docker compose up -d keyboardtd'`,
-then verify per step 4.
-
-When done, delete this whole section (there's no `.bak-0.4.1` file to clean
-up).
-
 # Releasing keyboardTD and reloading app-server-2
 
 Releases are tag-driven; the server only ever runs `ghcr.io/zboinek/keyboardtd:latest`.
